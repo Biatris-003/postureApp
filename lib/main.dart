@@ -5,8 +5,13 @@ import 'data/datasources/auth_service_mock.dart';
 import 'presentation/auth/screens/login_screen.dart';
 import 'presentation/member_dashboard/screens/member_dashboard_screen.dart';
 import 'presentation/advisor_dashboard/screens/advisor_dashboard_screen.dart';
+import 'package:firebase_core/firebase_core.dart';
+// import 'data/datasources/firebase_seeder.dart';  // Uncomment this line to seed Firebase with initial data ONLY
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+  // await FirebaseSeeder.seedAll(); // Uncomment this line to seed Firebase with initial data ONLY
   runApp(const ProviderScope(child: SmartPostureApp()));
 }
 
