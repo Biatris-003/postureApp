@@ -269,6 +269,91 @@ class FirebaseSeeder {
     print('✅ Exercises created');
   }
 
+// Add this to your FirebaseSeeder class
+
+  static Future<void> seedMultipleSessions() async {
+    print('🌱 Seeding multiple sessions for better analytics...');
+    
+    // Seed 7 days of data, 2 sessions per day
+    for (int day = 6; day >= 0; day--) {
+      for (int sessionNum = 0; sessionNum < 2; sessionNum++) {
+        final sessionId = 'session_d${day}_s$sessionNum';
+        final sessionStart = DateTime.now()
+            .subtract(Duration(days: day, hours: sessionNum == 0 ? 8 : 14));
+        final sessionEnd = sessionStart.add(const Duration(hours: 2));
+
+        // Create session
+        await _db.collection('sessions').doc(sessionId).set({
+          'sessionId': sessionId,
+          'patientId': 'p001',
+          'deviceId': 'd001',
+          'startTimestamp': sessionStart.toIso8601String(),
+          'endTimestamp': sessionEnd.toIso8601String(),
+          'activityContext': sessionNum == 0 ? 'morning_work' : 'afternoon_work',
+        });
+
+        // Create 30 readings + classifications per session
+        for (int i = 0; i < 30; i++) {
+          final timestamp = sessionStart
+              .add(Duration(minutes: i * 4))
+              .toIso8601String();
+          final readingId = 'r_${sessionId}_$i';
+
+          // Reading (raw sensor data)
+          await _db.collection('postureReadings').doc(readingId).set({
+            'readingId': readingId,
+            'sessionId': sessionId,
+            'sensorPlacement': 'C7, T4, T12, L5',
+            'timestamp': timestamp,
+            'C7_pitch': _randomAngle(),
+            'C7_roll': _randomAngle(),
+            'C7_yaw': _randomAngle(),
+            'T4_pitch': _randomAngle(),
+            'T4_roll': _randomAngle(),
+            'T4_yaw': _randomAngle(),
+            'T12_pitch': _randomAngle(),
+            'T12_roll': _randomAngle(),
+            'T12_yaw': _randomAngle(),
+            'L5_pitch': _randomAngle(),
+            'L5_roll': _randomAngle(),
+            'L5_yaw': _randomAngle(),
+          });
+
+          // Classification (DL model output)
+          // Make upright more likely to show realistic data
+          final rand = _random.nextDouble();
+          String label;
+          if (rand < 0.40) {
+            label = 'upright';
+          } else if (rand < 0.60) {
+            label = 'forward_bending';
+          } else if (rand < 0.75) {
+            label = 'slouching';
+          } else if (rand < 0.85) {
+            label = 'backward_bending';
+          } else if (rand < 0.92) {
+            label = 'left_bending';
+          } else {
+            label = 'right_bending';
+          }
+
+          await _db.collection('postureClassifications').doc('cl_${sessionId}_$i').set({
+            'classificationId': 'cl_${sessionId}_$i',
+            'readingId': readingId,
+            'modelId': 'm001',
+            'postureLabel': label,
+            'confidenceScore': 0.80 + _random.nextDouble() * 0.19,
+            'timestamp': timestamp,
+            'patientId': 'p001',
+            'sessionId': sessionId,
+          });
+        }
+        print('✅ Session $sessionId seeded');
+      }
+    }
+    print('✅ 7 days of data seeded (14 sessions, 420 readings)');
+  }
+
   static double _randomAngle() => (_random.nextDouble() * 30) - 15;
   static double _randomAccel() => (_random.nextDouble() * 2) - 1;
   static double _randomGyro() => (_random.nextDouble() * 4) - 2;
