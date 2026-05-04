@@ -1,41 +1,220 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 import 'assigned_members_tab.dart';
 import 'advisor_profile_tab.dart';
+import 'notifications_tab.dart';
 
 class AdvisorDashboardScreen extends ConsumerStatefulWidget {
   const AdvisorDashboardScreen({Key? key}) : super(key: key);
 
   @override
-  ConsumerState<AdvisorDashboardScreen> createState() => _AdvisorDashboardScreenState();
+  ConsumerState<AdvisorDashboardScreen> createState() =>
+      _AdvisorDashboardScreenState();
 }
 
-class _AdvisorDashboardScreenState extends ConsumerState<AdvisorDashboardScreen> {
+class _AdvisorDashboardScreenState
+    extends ConsumerState<AdvisorDashboardScreen> {
   int _currentIndex = 0;
 
-  final List<Widget> _tabs = [
-    const AssignedMembersTab(),
-    const AdvisorProfileTab(),
-  ];
+  // ✅ FIX: dynamic tab builder instead of static list
+  Widget _getTab(int index) {
+    switch (index) {
+      case 0:
+        return const AssignedMembersTab();
+      case 1:
+        return const NotificationsTab();
+      case 2:
+        return const AdvisorProfileTab();
+      default:
+        return const AssignedMembersTab();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Advisor Dashboard'),
+      backgroundColor: const Color(0xFFF8FAFD),
+      body: _getTab(_currentIndex),
+
+      // ── Bottom Navigation ─────────────────────────
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 20,
+              offset: const Offset(0, -4),
+            ),
+          ],
+        ),
+        child: SafeArea(
+          child: Padding(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildNavItem(
+                    0, Icons.people_outline, Icons.people, 'Patients'),
+
+                // ✅ FIX: live badge
+                _buildNavItemWithLiveBadge(
+                  1,
+                  Icons.notifications_outlined,
+                  Icons.notifications,
+                  'Alerts',
+                ),
+
+                _buildNavItem(
+                    2, Icons.person_outline, Icons.person, 'Profile'),
+              ],
+            ),
+          ),
+        ),
       ),
-      body: _tabs[_currentIndex],
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        onTap: (index) => setState(() => _currentIndex = index),
-        type: BottomNavigationBarType.fixed,
-        selectedItemColor: Theme.of(context).primaryColor,
-        unselectedItemColor: Colors.grey,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.group), label: 'Assigned'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
-        ],
+    );
+  }
+
+  // ── Normal Nav Item ──────────────────────────────
+
+  Widget _buildNavItem(
+      int index, IconData icon, IconData activeIcon, String label) {
+    final isSelected = _currentIndex == index;
+
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        setState(() => _currentIndex = index);
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? const Color(0xFF1565C0).withOpacity(0.1)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isSelected ? activeIcon : icon,
+              color: isSelected
+                  ? const Color(0xFF1565C0)
+                  : Colors.grey.shade400,
+              size: 24,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight:
+                    isSelected ? FontWeight.bold : FontWeight.normal,
+                color: isSelected
+                    ? const Color(0xFF1565C0)
+                    : Colors.grey.shade400,
+              ),
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  // ── Live Badge Nav Item (REAL-TIME) ─────────────
+
+  Widget _buildNavItemWithLiveBadge(
+      int index, IconData icon, IconData activeIcon, String label) {
+    final isSelected = _currentIndex == index;
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('notifications')
+          .where('clinicianId', isEqualTo: 'c001')
+          .where('isRead', isEqualTo: false)
+          .snapshots(),
+      builder: (context, snapshot) {
+        final count = snapshot.data?.docs.length ?? 0;
+
+        return GestureDetector(
+          onTap: () {
+            HapticFeedback.lightImpact();
+            setState(() => _currentIndex = index);
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.symmetric(
+                horizontal: 20, vertical: 8),
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? const Color(0xFF1565C0).withOpacity(0.1)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Icon(
+                      isSelected ? activeIcon : icon,
+                      color: isSelected
+                          ? const Color(0xFF1565C0)
+                          : Colors.grey.shade400,
+                      size: 24,
+                    ),
+
+                    if (count > 0)
+                      Positioned(
+                        top: -4,
+                        right: -6,
+                        child: Container(
+                          padding: const EdgeInsets.all(3),
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFFF6B6B),
+                            shape: BoxShape.circle,
+                          ),
+                          constraints: const BoxConstraints(
+                              minWidth: 16, minHeight: 16),
+                          child: Text(
+                            count > 9 ? '9+' : '$count',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: isSelected
+                        ? FontWeight.bold
+                        : FontWeight.normal,
+                    color: isSelected
+                        ? const Color(0xFF1565C0)
+                        : Colors.grey.shade400,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

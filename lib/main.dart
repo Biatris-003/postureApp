@@ -11,6 +11,7 @@ import 'package:firebase_core/firebase_core.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
+  // await FirebaseSeeder.seedNotificationsOnly();
   // await FirebaseSeeder.seedAll(); // Uncomment this line to seed Firebase with initial data ONLY
   runApp(const ProviderScope(child: SmartPostureApp()));
 }

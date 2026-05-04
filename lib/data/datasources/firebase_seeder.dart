@@ -354,6 +354,65 @@ class FirebaseSeeder {
     print('✅ 7 days of data seeded (14 sessions, 420 readings)');
   }
 
+  static Future<void> seedNotificationsOnly() async {
+    print('🌱 Seeding notifications ONLY...');
+
+    final db = FirebaseFirestore.instance;
+
+    // Check if notifications already exist → avoid duplicates
+    final existing = await db
+        .collection('notifications')
+        .where('clinicianId', isEqualTo: 'c001')
+        .limit(1)
+        .get();
+
+    if (existing.docs.isNotEmpty) {
+      print('⚠️ Notifications already exist → skipping seeding');
+      return;
+    }
+
+    final notifications = [
+      {
+        'clinicianId': 'c001',
+        'patientId': 'p001',
+        'patientName': 'Sara Ahmed',
+        'type': 'new_report',
+        'message': 'Sara Ahmed generated a new posture report.',
+        'timestamp': DateTime.now()
+            .subtract(const Duration(minutes: 5))
+            .toIso8601String(),
+        'isRead': false,
+      },
+      {
+        'clinicianId': 'c001',
+        'patientId': 'p001',
+        'patientName': 'Sara Ahmed',
+        'type': 'bad_posture_streak',
+        'message': 'Bad posture detected for more than 2 hours.',
+        'timestamp': DateTime.now()
+            .subtract(const Duration(hours: 2))
+            .toIso8601String(),
+        'isRead': false,
+      },
+      {
+        'clinicianId': 'c001',
+        'patientId': 'p001',
+        'patientName': 'Sara Ahmed',
+        'type': 'exercise_completed',
+        'message': 'All exercises completed successfully.',
+        'timestamp': DateTime.now()
+            .subtract(const Duration(hours: 6))
+            .toIso8601String(),
+        'isRead': true,
+      },
+    ];
+
+    for (final n in notifications) {
+      await db.collection('notifications').add(n);
+    }
+
+    print('✅ Notifications seeded successfully');
+  }
   static double _randomAngle() => (_random.nextDouble() * 30) - 15;
   static double _randomAccel() => (_random.nextDouble() * 2) - 1;
   static double _randomGyro() => (_random.nextDouble() * 4) - 2;
