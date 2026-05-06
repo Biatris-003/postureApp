@@ -19,40 +19,40 @@ class ExercisesTab extends ConsumerWidget {
     final List<Exercise> exercises = mappedExercises[uid] ?? [];
 
     if (exercises.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
           "No exercises assigned currently.",
-          style: TextStyle(fontSize: 16, color: Colors.grey),
+          style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5)),
         ),
       );
     }
 
     return Scaffold(
-      backgroundColor: Colors.grey[100],
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: CustomScrollView(
         slivers: [
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+            padding: const EdgeInsets.fromLTRB(24, 32, 24, 16),
             sliver: SliverToBoxAdapter(
               child: Text(
                 'Your Plan',
                 style: TextStyle(
-                  fontSize: 28,
+                  fontSize: 32,
                   fontWeight: FontWeight.w800,
                   letterSpacing: -0.5,
-                  color: Colors.grey[900],
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
             ),
           ),
           SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
             sliver: SliverList(
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
                   final exercise = exercises[index];
                   return Padding(
-                    padding: const EdgeInsets.only(bottom: 20),
+                    padding: const EdgeInsets.only(bottom: 24),
                     child: _buildExerciseCard(context, exercise),
                   );
                 },
@@ -76,33 +76,36 @@ class ExercisesTab extends ConsumerWidget {
         );
       },
       child: Container(
-        height: 200,
+        height: 220,
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(28),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 15,
-              offset: const Offset(0, 8),
+              color: Theme.of(context).shadowColor.withValues(alpha: 0.08),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
             )
           ],
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(28),
           child: Stack(
             fit: StackFit.expand,
             children: [
               // Background Image with Hero
               Hero(
                 tag: 'exercise_image_${exercise.id}',
-                child: Image.network(
-                  exercise.imageUrl,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => Container(
-                    color: Colors.grey[300],
-                    child: const Icon(Icons.image_not_supported, color: Colors.grey),
-                  ),
-                ),
+                child: exercise.imageUrl.startsWith('http')
+                    ? Image.network(
+                        exercise.imageUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => _buildErrorPlaceholder(context),
+                      )
+                    : Image.asset(
+                        exercise.imageUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => _buildErrorPlaceholder(context),
+                      ),
               ),
               // Gradient Overlay
               Container(
@@ -112,59 +115,67 @@ class ExercisesTab extends ConsumerWidget {
                     end: Alignment.bottomCenter,
                     colors: [
                       Colors.transparent,
-                      Colors.black.withOpacity(0.8),
+                      Colors.black.withValues(alpha: 0.85),
                     ],
-                    stops: const [0.4, 1.0],
+                    stops: const [0.3, 1.0],
                   ),
                 ),
               ),
               // Content
               Padding(
-                padding: const EdgeInsets.all(20.0),
+                padding: const EdgeInsets.all(24.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
+                    Text(
+                      exercise.title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      exercise.description,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.8),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          child: Row(
                             children: [
+                              Icon(Icons.schedule_rounded, color: Colors.white.withValues(alpha: 0.8), size: 18),
+                              const SizedBox(width: 6),
                               Text(
-                                exercise.title,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: -0.5,
+                                exercise.duration,
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.9),
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
                                 ),
                               ),
-                              const SizedBox(height: 6),
-                              Row(
-                                children: [
-                                  Icon(Icons.schedule, color: Colors.white.withOpacity(0.8), size: 16),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    exercise.duration,
-                                    style: TextStyle(
-                                      color: Colors.white.withOpacity(0.8),
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Icon(Icons.repeat, color: Colors.white.withOpacity(0.8), size: 16),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    exercise.frequency,
-                                    style: TextStyle(
-                                      color: Colors.white.withOpacity(0.8),
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ],
+                              const SizedBox(width: 16),
+                              Icon(Icons.repeat_rounded, color: Colors.white.withValues(alpha: 0.8), size: 18),
+                              const SizedBox(width: 6),
+                              Text(
+                                exercise.frequency,
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.9),
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                ),
                               ),
                             ],
                           ),
@@ -172,11 +183,11 @@ class ExercisesTab extends ConsumerWidget {
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.2),
+                            color: Colors.white.withValues(alpha: 0.25),
                             shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white.withOpacity(0.3)),
+                            border: Border.all(color: Colors.white.withValues(alpha: 0.4)),
                           ),
-                          child: const Icon(Icons.arrow_forward_ios, color: Colors.white, size: 16),
+                          child: const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 16),
                         )
                       ],
                     ),
@@ -187,6 +198,13 @@ class ExercisesTab extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildErrorPlaceholder(BuildContext context) {
+    return Container(
+      color: Theme.of(context).cardColor,
+      child: Icon(Icons.image_not_supported_rounded, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3), size: 40),
     );
   }
 }

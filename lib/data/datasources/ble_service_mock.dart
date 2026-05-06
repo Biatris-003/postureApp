@@ -7,7 +7,7 @@ class MockBLEService {
   final _controller = StreamController<List<double>>.broadcast();
 
   MockBLEService() {
-    _startSimulatingData();
+    _startSimulatingData();    
   }
 
   void _startSimulatingData() {

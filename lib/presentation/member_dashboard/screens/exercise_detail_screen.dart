@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:model_viewer_plus/model_viewer_plus.dart';
 import '../../../domain/entities/exercises/exercise.dart';
 
 class ExerciseDetailScreen extends StatelessWidget {
@@ -10,19 +9,20 @@ class ExerciseDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50], // Light background
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
-            expandedHeight: 300,
+            expandedHeight: 320,
             pinned: true,
+            backgroundColor: Theme.of(context).scaffoldBackgroundColor,
             flexibleSpace: FlexibleSpaceBar(
               title: Text(
                 exercise.title,
                 style: const TextStyle(
                   color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  shadows: [Shadow(blurRadius: 10.0, color: Colors.black45, offset: Offset(0, 2))],
+                  fontWeight: FontWeight.w800,
+                  shadows: [Shadow(blurRadius: 15.0, color: Colors.black87, offset: Offset(0, 4))],
                 ),
               ),
               background: Hero(
@@ -30,21 +30,24 @@ class ExerciseDetailScreen extends StatelessWidget {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    Image.network(
-                      exercise.imageUrl,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) => Container(
-                        color: Colors.grey[300],
-                        child: const Icon(Icons.image_not_supported, size: 50),
-                      ),
-                    ),
-                    const DecoratedBox(
+                    exercise.imageUrl.startsWith('http')
+                        ? Image.network(
+                            exercise.imageUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => _buildErrorImage(context),
+                          )
+                        : Image.asset(
+                            exercise.imageUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => _buildErrorImage(context),
+                          ),
+                    DecoratedBox(
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
-                          colors: [Colors.transparent, Colors.black87],
-                          stops: [0.6, 1.0],
+                          colors: [Colors.transparent, Colors.black.withValues(alpha: 0.9)],
+                          stops: const [0.5, 1.0],
                         ),
                       ),
                     ),
@@ -53,7 +56,14 @@ class ExerciseDetailScreen extends StatelessWidget {
               ),
             ),
             leading: IconButton(
-              icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
+              icon: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.4),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white, size: 20),
+              ),
               onPressed: () => Navigator.of(context).pop(),
             ),
           ),
@@ -65,94 +75,87 @@ class ExerciseDetailScreen extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      _buildInfoChip(Icons.timer_outlined, exercise.duration, Colors.blue),
+                      _buildInfoChip(context, Icons.timer_outlined, exercise.duration, Theme.of(context).primaryColor),
                       const SizedBox(width: 12),
-                      _buildInfoChip(Icons.repeat, exercise.frequency, Colors.orange),
+                      _buildInfoChip(context, Icons.repeat_rounded, exercise.frequency, const Color(0xFFF59E0B)),
                     ],
                   ),
-                  const SizedBox(height: 32),
-                  const Text(
+                  const SizedBox(height: 40),
+                  Text(
                     'Instructions',
                     style: TextStyle(
                       fontSize: 22,
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w800,
+                      color: Theme.of(context).colorScheme.onSurface,
                       letterSpacing: -0.5,
                     ),
                   ),
                   const SizedBox(height: 16),
                   Text(
                     exercise.description,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 16,
                       height: 1.6,
-                      color: Colors.black87,
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.8),
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
-                  if (exercise.modelUrl != null) ...[
-                    const SizedBox(height: 32),
-                    const Text(
-                      '3D Demonstration',
-                      style: TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: -0.5,
-                      ),
+                  const SizedBox(height: 40),
+                  Text(
+                    '3D Demonstration',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      color: Theme.of(context).colorScheme.onSurface,
+                      letterSpacing: -0.5,
                     ),
-                    const SizedBox(height: 16),
-                    Container(
-                      height: 300,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.05),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
-                          )
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
-                        child: ModelViewer(
-                          backgroundColor: Colors.transparent,
-                          src: exercise.modelUrl!,
-                          alt: "A 3D model of ${exercise.title}",
-                          ar: true,
-                          autoRotate: true,
-                          cameraControls: true,
-                          autoPlay: true,
-                          disableZoom: false,
-                        ),
-                      ),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    height: 320,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).cardColor,
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Theme.of(context).shadowColor.withValues(alpha: 0.05),
+                          blurRadius: 15,
+                          offset: const Offset(0, 5),
+                        )
+                      ],
                     ),
-                  ],
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(24),
+                      child: exercise.modelUrl != null
+                          ? Image.asset(
+                              exercise.modelUrl!,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) => _buildVideoFallback(context),
+                            )
+                          : _buildVideoFallback(context),
+                    ),
+                  ),
                   const SizedBox(height: 48),
                   SizedBox(
                     width: double.infinity,
-                    height: 56,
                     child: ElevatedButton(
                       onPressed: () {
-                        // Action to start exercise
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Exercise starting soon!')),
+                          SnackBar(
+                            content: const Text('Exercise tracking started!'),
+                            behavior: SnackBarBehavior.floating,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          ),
                         );
                       },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blueAccent,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        elevation: 4,
+                      style: Theme.of(context).elevatedButtonTheme.style?.copyWith(
+                        padding: WidgetStateProperty.all(const EdgeInsets.symmetric(vertical: 20)),
                       ),
-                      child: const Text(
-                        'Start Exercise',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                      ),
+                      child: const Text('Start Exercise', style: TextStyle(fontSize: 18, letterSpacing: 0.5)),
                     ),
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 48),
                 ],
               ),
             ),
@@ -162,13 +165,80 @@ class ExerciseDetailScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildInfoChip(IconData icon, String label, Color color) {
+  Widget _buildVideoFallback(BuildContext context) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        exercise.imageUrl.startsWith('http')
+            ? Image.network(
+                exercise.imageUrl,
+                width: double.infinity,
+                height: double.infinity,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => _buildErrorPlaceholder(context),
+              )
+            : Image.asset(
+                exercise.imageUrl,
+                width: double.infinity,
+                height: double.infinity,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => _buildErrorPlaceholder(context),
+              ),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.4),
+          ),
+        ),
+        Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Theme.of(context).primaryColor,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Theme.of(context).primaryColor.withValues(alpha: 0.5),
+                    blurRadius: 20,
+                    spreadRadius: 2,
+                  )
+                ],
+              ),
+              child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 40),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Watch Demonstration Video',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                shadows: [Shadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 10)],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Standard player fallback enabled',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.7),
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildInfoChip(BuildContext context, IconData icon, String label, Color color) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.2)),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -178,12 +248,25 @@ class ExerciseDetailScreen extends StatelessWidget {
           Text(
             label,
             style: TextStyle(
-              color: color.withOpacity(0.9),
-              fontWeight: FontWeight.w600,
+              color: color.withValues(alpha: 0.9),
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildErrorImage(BuildContext context) {
+    return Container(
+      color: Theme.of(context).primaryColor.withValues(alpha: 0.1),
+      child: Icon(Icons.image_not_supported_rounded, size: 60, color: Theme.of(context).primaryColor),
+    );
+  }
+
+  Widget _buildErrorPlaceholder(BuildContext context) {
+    return Container(
+      color: Theme.of(context).primaryColor.withValues(alpha: 0.1),
     );
   }
 }

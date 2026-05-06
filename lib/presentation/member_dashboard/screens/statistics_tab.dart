@@ -11,12 +11,12 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
+import '../../../data/datasources/auth_service_mock.dart';
 
 // Provider for analytics service
 final analyticsServiceProvider = Provider((ref) => AnalyticsService());
 
-// Hardcoded for now, will come from auth later
-const String currentPatientId = 'p001';
+// The current user ID will be retrieved from the authStateProvider
 
 class StatisticsTab extends ConsumerStatefulWidget {
   const StatisticsTab({Key? key}) : super(key: key);
@@ -59,16 +59,18 @@ class _StatisticsTabState extends ConsumerState<StatisticsTab> {
 
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
+    final user = ref.read(authStateProvider);
+    final userId = user?.uid ?? 'unknown';
     final service = ref.read(analyticsServiceProvider);
 
     try {
       List<PostureClassification> data;
       if (_selectedTimeRange == 0) {
-        data = await service.getClassificationsByDays(currentPatientId, 1);
+        data = await service.getClassificationsByDays(userId, 1);
       } else if (_selectedTimeRange == 1) {
-        data = await service.getClassificationsByDays(currentPatientId, 7);
+        data = await service.getClassificationsByDays(userId, 7);
       } else {
-        data = await service.getClassificationsByDays(currentPatientId, 30);
+        data = await service.getClassificationsByDays(userId, 30);
       }
       setState(() {
         _data = data;
@@ -967,9 +969,10 @@ Widget _buildPieChart(AnalyticsService service) {
 
     try {
       // Fetch patient info
+      final user = ref.read(authStateProvider);
       final patientDoc = await FirebaseFirestore.instance
           .collection('patients')
-          .doc(currentPatientId)
+          .doc(user?.uid ?? 'unknown')
           .get();
       final patient = patientDoc.data()!;
 
@@ -1282,7 +1285,7 @@ Widget _buildPieChart(AnalyticsService service) {
 
   await FirebaseFirestore.instance.collection('reports').doc(reportId).set({
     'reportId': reportId,
-    'patientId': currentPatientId,
+    'patientId': user?.uid ?? 'unknown',
     'generatedAt': DateTime.now().toIso8601String(),
     'reportType': _selectedTimeRange == 0
         ? 'daily'

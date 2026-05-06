@@ -10,7 +10,7 @@ class ProfileTab extends ConsumerWidget {
     final user = ref.watch(authStateProvider);
 
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
@@ -20,7 +20,7 @@ class ProfileTab extends ConsumerWidget {
               background: Container(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [Colors.blue.shade800, Colors.blue.shade400],
+                    colors: [Theme.of(context).primaryColor, Theme.of(context).colorScheme.secondary],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
@@ -37,7 +37,7 @@ class ProfileTab extends ConsumerWidget {
                       ),
                       child: const CircleAvatar(
                         radius: 55,
-                        backgroundImage: NetworkImage('https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=400&auto=format&fit=crop'),
+                        backgroundImage: AssetImage('assets/images/user_profile.jpg'),
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -54,8 +54,9 @@ class ProfileTab extends ConsumerWidget {
                       'Premium Member',
                       style: TextStyle(
                         fontSize: 16,
-                        color: Colors.white.withOpacity(0.9),
+                        color: Colors.white.withValues(alpha: 0.9),
                         letterSpacing: 1.2,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],
@@ -69,15 +70,16 @@ class ProfileTab extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _buildDailyGoalCard(),
-                  const SizedBox(height: 24),
-                  const Text('Hardware Connections', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                  _buildDailyGoalCard(context),
+                  const SizedBox(height: 32),
+                  Text('Hardware Connections', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onSurface)),
                   const SizedBox(height: 16),
-                  _buildHardwareCard(),
-                  const SizedBox(height: 24),
-                  const Text('Account Settings', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                  _buildHardwareCard(context),
+                  const SizedBox(height: 32),
+                  Text('Account Settings', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onSurface)),
                   const SizedBox(height: 16),
                   _buildSettingsGroup(context, ref),
+                  const SizedBox(height: 40),
                 ],
               ),
             ),
@@ -87,14 +89,14 @@ class ProfileTab extends ConsumerWidget {
     );
   }
 
-  Widget _buildDailyGoalCard() {
+  Widget _buildDailyGoalCard(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(24),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 15, offset: const Offset(0, 5)),
+          BoxShadow(color: Theme.of(context).shadowColor.withValues(alpha: 0.05), blurRadius: 15, offset: const Offset(0, 5)),
         ],
       ),
       child: Column(
@@ -103,8 +105,8 @@ class ProfileTab extends ConsumerWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Daily Goal', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              Icon(Icons.local_fire_department, color: Colors.orange.shade400, size: 28),
+              Text('Daily Goal', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onSurface)),
+              Icon(Icons.local_fire_department_rounded, color: const Color(0xFFF59E0B), size: 32),
             ],
           ),
           const SizedBox(height: 16),
@@ -114,20 +116,20 @@ class ProfileTab extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('80%', style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.blue.shade700)),
-                    const Text('Posture Score', style: TextStyle(color: Colors.grey)),
+                    Text('80%', style: TextStyle(fontSize: 36, fontWeight: FontWeight.w800, color: Theme.of(context).primaryColor)),
+                    Text('Posture Score', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5), fontWeight: FontWeight.w600)),
                   ],
                 ),
               ),
               Expanded(
                 flex: 2,
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(12),
                   child: LinearProgressIndicator(
                     value: 0.8,
-                    minHeight: 12,
-                    backgroundColor: Colors.blue.shade50,
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.blue.shade600),
+                    minHeight: 14,
+                    backgroundColor: Theme.of(context).primaryColor.withValues(alpha: 0.15),
+                    valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).primaryColor),
                   ),
                 ),
               )
@@ -138,42 +140,42 @@ class ProfileTab extends ConsumerWidget {
     );
   }
 
-  Widget _buildHardwareCard() {
+  Widget _buildHardwareCard(BuildContext context) {
+    final successColor = const Color(0xFF10B981);
+    
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(24),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 15, offset: const Offset(0, 5)),
+          BoxShadow(color: Theme.of(context).shadowColor.withValues(alpha: 0.05), blurRadius: 15, offset: const Offset(0, 5)),
         ],
-        border: Border.all(color: Colors.blue.shade50, width: 2),
+        border: Border.all(color: Theme.of(context).primaryColor.withValues(alpha: 0.1), width: 2),
       ),
-      child: Column(
+      child: Row(
         children: [
-          Row(
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(color: successColor.withValues(alpha: 0.15), shape: BoxShape.circle),
+            child: Icon(Icons.bluetooth_connected_rounded, color: successColor, size: 28),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Smart Shirt Sensors', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Theme.of(context).colorScheme.onSurface)),
+                const SizedBox(height: 4),
+                Text('Connected • Synced just now', style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5), fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
+          Column(
             children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: Colors.green.shade50, shape: BoxShape.circle),
-                child: Icon(Icons.bluetooth_connected, color: Colors.green.shade600),
-              ),
-              const SizedBox(width: 16),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Smart Shirt Sensors', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                    Text('Connected • Synced just now', style: TextStyle(fontSize: 13, color: Colors.grey)),
-                  ],
-                ),
-              ),
-              Column(
-                children: [
-                  Icon(Icons.battery_4_bar, color: Colors.green.shade500, size: 20),
-                  const Text('82%', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-                ],
-              ),
+              Icon(Icons.battery_4_bar_rounded, color: successColor, size: 24),
+              const SizedBox(height: 4),
+              Text('82%', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Theme.of(context).colorScheme.onSurface)),
             ],
           ),
         ],
@@ -184,23 +186,24 @@ class ProfileTab extends ConsumerWidget {
   Widget _buildSettingsGroup(BuildContext context, WidgetRef ref) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(24),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 15, offset: const Offset(0, 5)),
+          BoxShadow(color: Theme.of(context).shadowColor.withValues(alpha: 0.05), blurRadius: 15, offset: const Offset(0, 5)),
         ],
       ),
       child: Column(
         children: [
-          _buildSettingsTile(icon: Icons.notifications_active_outlined, title: 'Push Notifications', trailing: Switch(value: true, onChanged: (_) {}, activeColor: Colors.blue)),
-          const Divider(height: 1, indent: 56),
-          _buildSettingsTile(icon: Icons.person_outline, title: 'Personal Information', trailing: const Icon(Icons.chevron_right, color: Colors.grey)),
-          const Divider(height: 1, indent: 56),
-          _buildSettingsTile(icon: Icons.security_outlined, title: 'Privacy & Data', trailing: const Icon(Icons.chevron_right, color: Colors.grey)),
-          const Divider(height: 1, indent: 56),
+          _buildSettingsTile(context, icon: Icons.notifications_active_outlined, title: 'Push Notifications', trailing: Switch(value: true, onChanged: (_) {}, activeThumbColor: Theme.of(context).primaryColor)),
+          Divider(height: 1, indent: 64, color: Theme.of(context).scaffoldBackgroundColor),
+          _buildSettingsTile(context, icon: Icons.person_outline, title: 'Personal Information', trailing: Icon(Icons.chevron_right_rounded, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3), size: 28)),
+          Divider(height: 1, indent: 64, color: Theme.of(context).scaffoldBackgroundColor),
+          _buildSettingsTile(context, icon: Icons.security_outlined, title: 'Privacy & Data', trailing: Icon(Icons.chevron_right_rounded, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3), size: 28)),
+          Divider(height: 1, indent: 64, color: Theme.of(context).scaffoldBackgroundColor),
           ListTile(
-            leading: const Icon(Icons.logout, color: Colors.redAccent),
-            title: const Text('Log Out', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w500)),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+            leading: const Icon(Icons.logout_rounded, color: Color(0xFFEF4444), size: 28),
+            title: const Text('Log Out', style: TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.bold, fontSize: 16)),
             onTap: () {
               ref.read(authServiceProvider).logout();
               ref.read(authStateProvider.notifier).setUser(null);
@@ -211,10 +214,15 @@ class ProfileTab extends ConsumerWidget {
     );
   }
 
-  Widget _buildSettingsTile({required IconData icon, required String title, required Widget trailing}) {
+  Widget _buildSettingsTile(BuildContext context, {required IconData icon, required String title, required Widget trailing}) {
     return ListTile(
-      leading: Icon(icon, color: Colors.blue.shade700),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w500)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      leading: Container(
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(color: Theme.of(context).primaryColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
+        child: Icon(icon, color: Theme.of(context).primaryColor),
+      ),
+      title: Text(title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Theme.of(context).colorScheme.onSurface)),
       trailing: trailing,
       onTap: () {},
     );

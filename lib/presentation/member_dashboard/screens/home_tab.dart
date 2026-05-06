@@ -34,7 +34,7 @@ class _HomeTabState extends ConsumerState<HomeTab> with SingleTickerProviderStat
     final mlService = ref.watch(mlClassifierServiceProvider);
 
     return Scaffold(
-      backgroundColor: Colors.grey[50], // Clean light background
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: StreamBuilder<List<double>>(
         stream: bleService.sensorDataStream,
         builder: (context, snapshot) {
@@ -52,13 +52,12 @@ class _HomeTabState extends ConsumerState<HomeTab> with SingleTickerProviderStat
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildHeader(),
+                  _buildHeader(context),
                   const SizedBox(height: 48),
-                  _buildStatusRing(isUpright, postureData.confidence),
-                  const SizedBox(height: 48),
-                  const Text('Live Sensor Data', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 16),
-                  _buildLiveSensorsGrid(rawData),
+                  _buildCentralAvatar(context, isUpright, postureData.postureClass),
+                  const SizedBox(height: 64),
+                  _buildPostureScoreSlider(context, postureData.confidence, isUpright),
+                  const SizedBox(height: 32),
                 ],
               ),
             ),
@@ -68,135 +67,241 @@ class _HomeTabState extends ConsumerState<HomeTab> with SingleTickerProviderStat
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        const Column(
+        Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Good Morning,', style: TextStyle(fontSize: 16, color: Colors.grey, fontWeight: FontWeight.w500)),
-            SizedBox(height: 4),
-            Text('Sarah Connor', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, letterSpacing: -0.5)),
+            Text('Good Morning,', 
+              style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6), fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 4),
+            Text('Sarah Connor', 
+              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, letterSpacing: -0.5, color: Theme.of(context).colorScheme.onSurface),
+            ),
           ],
         ),
         Container(
-          padding: const EdgeInsets.all(10),
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Theme.of(context).cardColor,
             shape: BoxShape.circle,
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))],
+            boxShadow: [
+              BoxShadow(color: Theme.of(context).shadowColor.withValues(alpha: 0.05), blurRadius: 15, offset: const Offset(0, 5)),
+            ],
           ),
-          child: const Icon(Icons.notifications_none, color: Colors.black87),
+          child: Icon(Icons.notifications_none, color: Theme.of(context).colorScheme.onSurface),
         ),
       ],
     );
   }
 
-  Widget _buildStatusRing(bool isUpright, double confidence) {
-    Color ringColor = isUpright ? Colors.green.shade500 : Colors.red.shade500;
-    Color glowColor = isUpright ? Colors.green.shade200 : Colors.red.shade200;
+  Widget _buildCentralAvatar(BuildContext context, bool isUpright, String postureClass) {
+    // Mapping 6 postures to specific colors and assets
+    final Map<String, Color> statusColors = {
+      'Upright': const Color(0xFF10B981),
+      'Slouching': const Color(0xFFEF4444),
+      'Forward Bending': const Color(0xFFF59E0B),
+      'Backward Bending': const Color(0xFF8B5CF6),
+      'Left Bending': const Color(0xFF3B82F6),
+      'Right Bending': const Color(0xFF06B6D4),
+    };
+
+    final Map<String, String> avatarPaths = {
+      'Upright': 'assets/images/Upright.jpeg',
+      'Slouching': 'assets/images/Slouching.jpeg',
+      'Forward Bending': 'assets/images/Forward Bending.jpeg',
+      'Backward Bending': 'assets/images/Backward Bending.jpeg',
+      'Left Bending': 'assets/images/Left Bending.jpeg',
+      'Right Bending': 'assets/images/Right Bending.jpeg',
+    };
+
+    final Map<String, String> exactTexts = {
+      'Upright': 'Upright Posture',
+      'Slouching': 'Slouching',
+      'Forward Bending': 'Forward Bending',
+      'Backward Bending': 'Backward Bending',
+      'Left Bending': 'Left Bending',
+      'Right Bending': 'Right Bending',
+    };
+
+    final Map<String, IconData> statusIcons = {
+      'Upright': Icons.check_circle_rounded,
+      'Slouching': Icons.warning_rounded,
+      'Forward Bending': Icons.arrow_upward_rounded,
+      'Backward Bending': Icons.arrow_downward_rounded,
+      'Left Bending': Icons.arrow_back_rounded,
+      'Right Bending': Icons.arrow_forward_rounded,
+    };
+
+    final Color statusColor = statusColors[postureClass] ?? (isUpright ? const Color(0xFF10B981) : const Color(0xFFEF4444));
+    final String avatarPath = avatarPaths[postureClass] ?? (isUpright ? 'assets/images/Upright.jpeg' : 'assets/images/Slouching.jpeg');
+    final IconData statusIcon = statusIcons[postureClass] ?? (isUpright ? Icons.check_circle_rounded : Icons.warning_rounded);
+    final String displayText = exactTexts[postureClass] ?? postureClass;
 
     return Center(
-      child: AnimatedBuilder(
-        animation: _pulseController,
-        builder: (context, child) {
-          return Container(
-            width: 250,
-            height: 250,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: glowColor.withOpacity(0.5 * _pulseController.value),
-                  blurRadius: 40,
-                  spreadRadius: 10 * _pulseController.value,
+      child: Column(
+        children: [
+          AnimatedBuilder(
+            animation: _pulseController,
+            builder: (context, child) {
+              return Container(
+                width: 280,
+                height: 280,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Theme.of(context).cardColor,
+                  boxShadow: [
+                    BoxShadow(
+                      color: statusColor.withValues(alpha: 0.15 * _pulseController.value),
+                      blurRadius: 40,
+                      spreadRadius: 10 * _pulseController.value,
+                    ),
+                    BoxShadow(
+                      color: Theme.of(context).shadowColor.withValues(alpha: 0.08), 
+                      blurRadius: 30, 
+                      offset: const Offset(0, 15),
+                    ),
+                  ],
+                  border: Border.all(color: statusColor.withValues(alpha: 0.3), width: 4),
                 ),
-                BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 20, offset: const Offset(0, 10)),
+                child: ClipOval(
+                  child: Image.asset(
+                    avatarPath,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) => Container(
+                      color: Theme.of(context).primaryColor.withValues(alpha: 0.1),
+                      child: Icon(Icons.person_rounded, size: 100, color: Theme.of(context).primaryColor.withValues(alpha: 0.5)),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 24),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            decoration: BoxDecoration(
+              color: statusColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(30),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  statusIcon,
+                  color: statusColor,
+                  size: 24,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  displayText,
+                  style: TextStyle(
+                    color: statusColor,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.5,
+                    fontSize: 18,
+                  ),
+                ),
               ],
-              border: Border.all(color: ringColor, width: 8),
             ),
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    isUpright ? Icons.check_circle : Icons.warning_amber_rounded,
-                    size: 48,
-                    color: ringColor,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    isUpright ? 'Perfect\nPosture' : 'Posture\nDeviation',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      height: 1.2,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: ringColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      'AI Confidence ${(confidence * 100).toInt()}%',
-                      style: TextStyle(color: ringColor, fontWeight: FontWeight.bold, fontSize: 12),
-                    ),
-                  )
-                ],
-              ),
-            ),
-          );
-        },
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildLiveSensorsGrid(List<double> rawData) {
-    // Generate mock sensible data from the raw double array (pitch, roll, yaw)
-    double pitch = (rawData.isNotEmpty ? rawData[0] : 0) * 90; // mock degrees
-    double roll = (rawData.length > 1 ? rawData[1] : 0) * 45; 
-    double yaw = (rawData.length > 2 ? rawData[2] : 0) * 360;
+  Widget _buildPostureScoreSlider(BuildContext context, double confidence, bool isUpright) {
+    // Generate a mock score based on confidence and upright state 
+    // Score is 0 to 100. Upright is 80-100. Non-upright is 0-79.
+    double score = isUpright ? 80 + (confidence * 20) : (1.0 - confidence) * 79;
+    Color sliderColor = Theme.of(context).primaryColor;
+    
+    if (score > 80) sliderColor = const Color(0xFF10B981);
+    else if (score > 50) sliderColor = const Color(0xFFF59E0B);
+    else sliderColor = const Color(0xFFEF4444);
 
-    return Row(
-      children: [
-        Expanded(child: _buildSensorCard('Pitch', '${pitch.toStringAsFixed(1)}°', Icons.screen_rotation_outlined, Colors.blue)),
-        const SizedBox(width: 16),
-        Expanded(child: _buildSensorCard('Roll', '${roll.toStringAsFixed(1)}°', Icons.rotate_right_outlined, Colors.orange)),
-        const SizedBox(width: 16),
-        Expanded(child: _buildSensorCard('Yaw', '${yaw.toStringAsFixed(1)}°', Icons.explore_outlined, Colors.purple)),
-      ],
-    );
-  }
-
-  Widget _buildSensorCard(String title, String value, IconData icon, MaterialColor color) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4))],
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: [
+          BoxShadow(color: Theme.of(context).shadowColor.withValues(alpha: 0.05), blurRadius: 20, offset: const Offset(0, 10))
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(color: color.shade50, borderRadius: BorderRadius.circular(10)),
-            child: Icon(icon, color: color, size: 20),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                'Posture Score',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: Theme.of(context).colorScheme.onSurface,
+                  letterSpacing: -0.5,
+                ),
+              ),
+              Text(
+                '${score.toInt()}',
+                style: TextStyle(
+                  fontSize: 32,
+                  fontWeight: FontWeight.w900,
+                  color: sliderColor,
+                  height: 1.0,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          Stack(
+            children: [
+              // Background track
+              Container(
+                height: 16,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              // Filled track
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 500),
+                curve: Curves.easeOutCubic,
+                height: 16,
+                width: MediaQuery.of(context).size.width * (score / 100).clamp(0.0, 1.0) * 0.75, // Approximating width relative to screen padding
+                decoration: BoxDecoration(
+                  color: sliderColor,
+                  borderRadius: BorderRadius.circular(8),
+                  boxShadow: [
+                    BoxShadow(
+                      color: sliderColor.withValues(alpha: 0.4),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    )
+                  ],
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
-          Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: -0.5)),
-          const SizedBox(height: 4),
-          Text(title, style: TextStyle(color: Colors.grey.shade500, fontSize: 13, fontWeight: FontWeight.w600)),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Poor', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4), fontWeight: FontWeight.w600, fontSize: 12)),
+              Text('Fair', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4), fontWeight: FontWeight.w600, fontSize: 12)),
+              Text('Optimal', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4), fontWeight: FontWeight.w600, fontSize: 12)),
+            ],
+          )
         ],
       ),
     );
   }
 }
+
