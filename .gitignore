@@ -44,3 +44,12 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 android/app/google-services.json
+
+
+
+data/
+*.pyc
+__pycache__/
+.venv/
+venv/
+serviceAccountKey.json
