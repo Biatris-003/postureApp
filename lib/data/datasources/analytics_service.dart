@@ -19,6 +19,68 @@ class AnalyticsService {
 
   // ─── FETCH DATA ───────────────────────────────────────────────
 
+  Future<List<PostureClassification>> getTodayClassifications(String patientId) async {
+    final now = DateTime.now();
+    final todayMidnight = DateTime(now.year, now.month, now.day); // 00:00:00 today
+    final sinceTimestamp = Timestamp.fromDate(todayMidnight);
+
+    final snapshot = await _db
+        .collection('postureClassifications')
+        .where('patientId', isEqualTo: patientId)
+        .where('timestamp', isGreaterThan: sinceTimestamp)
+        .orderBy('timestamp')
+        .get();
+
+    return snapshot.docs
+        .map((doc) => PostureClassification.fromMap(doc.data(), doc.id))
+        .toList();
+  }
+
+
+  Future<void> saveDailyStatistics(String patientId, List<PostureClassification> data) async {
+    final now = DateTime.now();
+    final dateKey = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    final docId = '${patientId}_$dateKey'; // e.g. "test_patient_001_2026-05-09"
+
+    final percentages = calculatePosturePercentages(data);
+    final counts = calculatePostureCounts(data);
+    final score = calculatePostureScore(data);
+    final problematic = getMostProblematicPosture(data);
+    final uprightCount = counts['upright'] ?? 0;
+
+    await _db.collection('statistics').doc(docId).set({
+      'patientId': patientId,
+      'date': dateKey,
+      'timestamp': Timestamp.fromDate(DateTime(now.year, now.month, now.day)),
+
+      'postureScore': score,
+      'totalReadings': data.length,
+      'mostProblematicPosture': problematic,
+      'uprightMinutes': uprightCount * 2,
+
+      'counts': {
+        'upright': counts['upright'] ?? 0,
+        'forward_bending': counts['forward_bending'] ?? 0,
+        'backward_bending': counts['backward_bending'] ?? 0,
+        'slouching': counts['slouching'] ?? 0,
+        'left_bending': counts['left_bending'] ?? 0,
+        'right_bending': counts['right_bending'] ?? 0,
+      },
+
+      'percentages': {
+        'upright': percentages['upright'] ?? 0.0,
+        'forward_bending': percentages['forward_bending'] ?? 0.0,
+        'backward_bending': percentages['backward_bending'] ?? 0.0,
+        'slouching': percentages['slouching'] ?? 0.0,
+        'left_bending': percentages['left_bending'] ?? 0.0,
+        'right_bending': percentages['right_bending'] ?? 0.0,
+      },
+
+      'lastUpdated': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
+
   // Get all classifications for a patient (all time)
   Future<List<PostureClassification>> getAllClassifications(String patientId) async {
     final snapshot = await _db
@@ -51,10 +113,11 @@ class AnalyticsService {
   Future<List<PostureClassification>> getClassificationsByDays(
       String patientId, int days) async {
     final since = DateTime.now().subtract(Duration(days: days));
+    final sinceTimestamp = Timestamp.fromDate(since); 
     final snapshot = await _db
         .collection('postureClassifications')
         .where('patientId', isEqualTo: patientId)
-        .where('timestamp', isGreaterThan: since.toIso8601String())
+        .where('timestamp', isGreaterThan: sinceTimestamp)
         .orderBy('timestamp')
         .get();
 

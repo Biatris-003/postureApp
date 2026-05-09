@@ -59,8 +59,7 @@ class _StatisticsTabState extends ConsumerState<StatisticsTab> {
 
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
-    final user = ref.read(authStateProvider);
-    final userId = user?.uid ?? 'unknown';
+    const userId = 'test_patient_001'; // hardcoded until auth is connected
     final service = ref.read(analyticsServiceProvider);
 
     try {
@@ -76,7 +75,13 @@ class _StatisticsTabState extends ConsumerState<StatisticsTab> {
         _data = data;
         _isLoading = false;
       });
+
+      if (_selectedTimeRange == 0 && data.isNotEmpty) {
+        await service.saveDailyStatistics(userId, data);
+        print('✅ Daily statistics updated for today');
+      }
     } catch (e) {
+      print('❌ loadData error: $e'); // check your debug console
       setState(() {
         _data = [];
         _isLoading = false;

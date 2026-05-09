@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 class PostureClassification {
   final String classificationId;
   final String readingId;
@@ -25,8 +27,8 @@ class PostureClassification {
       readingId: map['readingId'] ?? '',
       modelId: map['modelId'] ?? '',
       postureLabel: map['postureLabel'] ?? '',
-      confidenceScore: (map['confidenceScore'] ?? 0.0).toDouble(),
-      timestamp: DateTime.parse(map['timestamp']),
+      confidenceScore: (map['confidenceScore'] ?? map['confidence'] ?? 0.0).toDouble(),
+      timestamp: (map['timestamp'] as Timestamp).toDate(), 
       patientId: map['patientId'] ?? '',
       sessionId: map['sessionId'] ?? '',
     );
