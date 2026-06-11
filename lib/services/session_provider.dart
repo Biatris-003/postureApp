@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'prediction_socket_service.dart';
+import 'ml/realtime_processor.dart';
 
 const Map<int, String> postureNames = {
   1: 'Backward Bending',
@@ -23,7 +23,6 @@ const Map<int, Color> postureColors = {
   6: Color(0xFF3B82F6),
 };
 
-// Score weight per posture (0–100). Used to compute session score.
 const Map<int, double> _postureWeights = {
   1: 30.0,
   2: 100.0,
@@ -40,30 +39,33 @@ class PostureEvent {
     required this.posture,
     required this.name,
     required this.timestamp,
+    required this.confidence,
   });
 
   final int posture;
   final String name;
   final DateTime timestamp;
+  final double confidence;
 }
 
 class SessionState {
   const SessionState({
     this.status = SessionStatus.idle,
     this.startTime,
-    this.lastPrediction,
+    this.lastPosture,
+    this.lastConfidence,
     this.timeline = const [],
   });
 
   final SessionStatus status;
   final DateTime? startTime;
-  final Prediction? lastPrediction;
+  final int? lastPosture;
+  final double? lastConfidence;
   final List<PostureEvent> timeline;
 
   Duration get elapsed =>
       startTime == null ? Duration.zero : DateTime.now().difference(startTime!);
 
-  /// Percentage (0–100) for each posture id seen this session.
   Map<int, double> get posturePercentages {
     if (timeline.isEmpty) return {};
     final counts = <int, int>{};
@@ -74,7 +76,6 @@ class SessionState {
     return counts.map((k, v) => MapEntry(k, v / total * 100));
   }
 
-  /// Weighted average score 0–100.
   double get sessionScore {
     if (timeline.isEmpty) return 0;
     var total = 0.0;
@@ -87,19 +88,20 @@ class SessionState {
   SessionState copyWith({
     SessionStatus? status,
     DateTime? startTime,
-    Prediction? lastPrediction,
+    int? lastPosture,
+    double? lastConfidence,
     List<PostureEvent>? timeline,
   }) {
     return SessionState(
       status: status ?? this.status,
       startTime: startTime ?? this.startTime,
-      lastPrediction: lastPrediction ?? this.lastPrediction,
+      lastPosture: lastPosture ?? this.lastPosture,
+      lastConfidence: lastConfidence ?? this.lastConfidence,
       timeline: timeline ?? this.timeline,
     );
   }
 }
 
-/// Immutable snapshot produced when a session ends.
 class SessionData {
   const SessionData({
     required this.startTime,
@@ -119,44 +121,45 @@ class SessionData {
 }
 
 class SessionNotifier extends Notifier<SessionState> {
-  StreamSubscription<Prediction>? _sub;
+  RealtimeProcessor? _processor;
+  StreamSubscription<PredictionResult>? _sub;
 
   @override
   SessionState build() {
-    ref.onDispose(() => _sub?.cancel());
+    ref.onDispose(_cleanup);
     return const SessionState();
   }
 
-  void startSession() {
-    _sub?.cancel();
+  Future<void> startSession() async {
+    await _cleanup();
     state = SessionState(
       status: SessionStatus.starting,
       startTime: DateTime.now(),
     );
-    _sub = ref
-        .read(predictionSocketServiceProvider)
-        .predictions
-        .listen(_onPrediction);
+
+    _processor = RealtimeProcessor();
+    await _processor!.start();
+
+    _sub = _processor!.predictions.listen(_onPrediction);
   }
 
-  void _onPrediction(Prediction p) {
+  void _onPrediction(PredictionResult result) {
     if (state.status == SessionStatus.idle) return;
     final event = PostureEvent(
-      posture: p.posture,
-      name: postureNames[p.posture] ?? 'Unknown',
-      timestamp: DateTime.now(),
+      posture: result.posture,
+      name: postureNames[result.posture] ?? 'Unknown',
+      timestamp: result.timestamp,
+      confidence: result.confidence,
     );
     state = state.copyWith(
       status: SessionStatus.active,
-      lastPrediction: p,
+      lastPosture: result.posture,
+      lastConfidence: result.confidence,
       timeline: [...state.timeline, event],
     );
   }
 
-  /// Stops the session and returns the accumulated data.
   SessionData stopSession() {
-    _sub?.cancel();
-    _sub = null;
     final data = SessionData(
       startTime: state.startTime ?? DateTime.now(),
       endTime: DateTime.now(),
@@ -164,8 +167,17 @@ class SessionNotifier extends Notifier<SessionState> {
       timeline: state.timeline,
       sessionScore: state.sessionScore,
     );
+    _cleanup();
     state = const SessionState();
     return data;
+  }
+
+  Future<void> _cleanup() async {
+    await _sub?.cancel();
+    _sub = null;
+    await _processor?.stop();
+    _processor?.dispose();
+    _processor = null;
   }
 }
 

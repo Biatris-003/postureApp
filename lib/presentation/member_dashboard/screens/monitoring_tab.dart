@@ -70,7 +70,7 @@ class _MonitoringTabState extends ConsumerState<MonitoringTab> {
             ),
             const SizedBox(height: 12),
             Text(
-              'Make sure the sensor backend scripts are running before you start.',
+              'Make sure all four WitMotion sensors are turned on and within Bluetooth range.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Theme.of(context)
@@ -128,7 +128,7 @@ class _MonitoringTabState extends ConsumerState<MonitoringTab> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Waiting for the first reading from the backend.',
+              'Connecting to sensors and loading model...',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Theme.of(context)
@@ -151,7 +151,7 @@ class _MonitoringTabState extends ConsumerState<MonitoringTab> {
   // ─── Active ──────────────────────────────────────────────────────────────
 
   Widget _buildActive(BuildContext context, SessionState session) {
-    final posture = session.lastPrediction!.posture;
+    final posture = session.lastPosture ?? 2;
     final postureName = postureNames[posture] ?? 'Unknown';
     final color = postureColors[posture] ?? Theme.of(context).primaryColor;
     final percentages = session.posturePercentages;
