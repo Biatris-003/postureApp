@@ -284,7 +284,7 @@ class RealtimeProcessor:
         if not self._should_predict(now):
             return
 
-        snapshot = list(fresh_rows[-self.win_len :])
+        snapshot = list(fresh_rows[-(self.win_len + 50) :])
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             None, self._run_inference, snapshot
@@ -330,7 +330,7 @@ class RealtimeProcessor:
             return None
 
         wide_df = ensure_missing_columns(wide_df)
-        wide_recent = wide_df.tail(self.win_len + 20)
+        wide_recent = wide_df.tail(self.win_len + 50)
         x_full = preprocess_dataframe(wide_recent, quat_mode=self.quat_mode)
         x_full = select_acc_euler(x_full)
         latest_window = x_full[-self.win_len :]
