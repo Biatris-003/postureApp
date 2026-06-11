@@ -349,7 +349,7 @@ async def main() -> None:
     parser.add_argument("--raw", action="store_true", help="Print raw notification frames")
     parser.add_argument("--print_every", type=int, default=1, help="Print every Nth frame")
     parser.add_argument("--out_host", default="127.0.0.1", help="Prediction ingest host")
-    parser.add_argument("--out_port", type=int, default=9001, help="Prediction ingest port")
+    parser.add_argument("--out_port", type=int, default=9301, help="Prediction ingest port")
     parser.add_argument("--debug_stats", action="store_true", help="Print mag/quat counters")
     parser.add_argument("--request_mag_quat", action="store_true", help="Request mag/quat via ffe9")
     parser.add_argument("--request_interval", type=float, default=0.2, help="Seconds between requests")

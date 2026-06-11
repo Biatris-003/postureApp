@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as developer;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
@@ -59,11 +60,20 @@ class Prediction {
   }
 }
 
+String _defaultWebSocketUrl() {
+  // Web (Chrome) and desktop Windows both reach the host directly.
+  // Android emulator uses 10.0.2.2 as the alias for the host machine.
+  if (kIsWeb) return 'ws://localhost:9302';
+  if (defaultTargetPlatform == TargetPlatform.android) return 'ws://10.0.2.2:9302';
+  return 'ws://localhost:9302';
+}
+
 class PredictionSocketService {
   PredictionSocketService({
-    this.url = 'ws://10.0.2.2:9302',
+    String? url,
     Duration reconnectDelay = const Duration(seconds: 2),
-  }) : _reconnectDelay = reconnectDelay;
+  })  : url = url ?? _defaultWebSocketUrl(),
+        _reconnectDelay = reconnectDelay;
 
   final String url;
   final Duration _reconnectDelay;

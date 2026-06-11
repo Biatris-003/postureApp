@@ -284,30 +284,15 @@ class RealtimeProcessor:
         if not self._should_predict(now):
             return
 
-        wide_df = pd.DataFrame(fresh_rows[-self.win_len :])
-        missing_cols = check_missing_columns(wide_df)
-        if missing_cols:
-            print("Missing columns in synced window:", missing_cols)
+        snapshot = list(fresh_rows[-self.win_len :])
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None, self._run_inference, snapshot
+        )
+        if result is None:
             return
 
-        wide_df = ensure_missing_columns(wide_df)
-        wide_recent = wide_df.tail(self.win_len + 20)
-        x_full = preprocess_dataframe(wide_recent, quat_mode=self.quat_mode)
-        x_full = select_acc_euler(x_full)
-        latest_window = x_full[-self.win_len :]
-        x_windows = latest_window[None, :, :]
-        x_windows = apply_sensor_norm(x_windows, self.means, self.stds)
-
-        if not np.isfinite(x_windows).all():
-            print("NaN or inf detected after preprocessing. Skipping prediction.")
-            return
-
-        expected_shape = tuple(self.model.input_shape[1:])
-        if expected_shape and tuple(x_windows.shape[1:]) != expected_shape:
-            print(f"Input shape mismatch. Expected {expected_shape}, got {x_windows.shape[1:]}")
-            return
-
-        probs = self.model.predict(x_windows, verbose=0)
+        probs = result
         prob_row = probs[0]
         pred_idx = int(np.argmax(prob_row))
         conf = float(prob_row[pred_idx]) * 100.0
@@ -317,11 +302,6 @@ class RealtimeProcessor:
             print(f"Prob {label}: {prob:.4f}")
 
         if self.debug_input_snapshot:
-            pd.DataFrame(wide_df.tail(self.win_len)).to_csv(
-                "latest_wide_window_loso.csv",
-                index=False,
-            )
-            np.save("latest_model_input_loso.npy", x_windows)
             pd.DataFrame(
                 {"posture": self.postures, "probability": prob_row}
             ).to_csv("latest_probs_loso.csv", index=False)
@@ -340,6 +320,37 @@ class RealtimeProcessor:
         print(f"Confidence: {conf:.1f}%")
         self.last_predict_time = now
         self.last_predict_synced = self.synced_count
+
+    def _run_inference(self, rows):
+        """Blocking preprocessing + model inference — runs in a thread pool."""
+        wide_df = pd.DataFrame(rows)
+        missing_cols = check_missing_columns(wide_df)
+        if missing_cols:
+            print("Missing columns in synced window:", missing_cols)
+            return None
+
+        wide_df = ensure_missing_columns(wide_df)
+        wide_recent = wide_df.tail(self.win_len + 20)
+        x_full = preprocess_dataframe(wide_recent, quat_mode=self.quat_mode)
+        x_full = select_acc_euler(x_full)
+        latest_window = x_full[-self.win_len :]
+        x_windows = latest_window[None, :, :]
+        x_windows = apply_sensor_norm(x_windows, self.means, self.stds)
+
+        if not np.isfinite(x_windows).all():
+            print("NaN or inf detected after preprocessing. Skipping prediction.")
+            return None
+
+        expected_shape = tuple(self.model.input_shape[1:])
+        if expected_shape and tuple(x_windows.shape[1:]) != expected_shape:
+            print(f"Input shape mismatch. Expected {expected_shape}, got {x_windows.shape[1:]}")
+            return None
+
+        if self.debug_input_snapshot:
+            pd.DataFrame(wide_df.tail(self.win_len)).to_csv("latest_wide_window_loso.csv", index=False)
+            np.save("latest_model_input_loso.npy", x_windows)
+
+        return self.model.predict(x_windows, verbose=0)
 
     def _try_sync_row(self) -> tuple[Dict[str, object], Dict[str, float], float] | None:
         if not all(s in self.device_buffers and self.device_buffers[s] for s in EXPECTED_SENSORS):
@@ -417,9 +428,9 @@ async def main() -> None:
     parser.add_argument("--in_port", type=int, default=9301)
     parser.add_argument("--out_host", default="0.0.0.0")
     parser.add_argument("--out_port", type=int, default=9302)
-    parser.add_argument("--weights", default="loso_final.weights.h5", help="Path to LOSO weights")
+    parser.add_argument("--weights", default="models/loso_weights.weights.h5", help="Path to LOSO weights")
     parser.add_argument("--postures_root", default="wide_data")
-    parser.add_argument("--norm_npz", default="loso_norm_stats.npz")
+    parser.add_argument("--norm_npz", default="models/loso_norm_stats.npz")
     parser.add_argument("--win_len", type=int, default=200)
     parser.add_argument("--buffer_mult", type=int, default=2)
     parser.add_argument(

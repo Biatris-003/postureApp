@@ -86,7 +86,7 @@ class _StatusOnlyContent extends StatelessWidget {
         ],
         const SizedBox(height: 20),
         const Text(
-          'Waiting for realtime prediction messages from the Python TCP backend.',
+          'Waiting for realtime prediction messages from the Python WebSocket backend.',
         ),
       ],
     );
