@@ -141,14 +141,17 @@ class ExercisesTab extends ConsumerWidget {
             children: [
               // ── Background image ─────────────────────────────────────
               Hero(
-                tag: 'exercise_image_${exercise.id}',
-                child: Image.asset(
-                  exercise.imageUrl,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) =>
-                      _buildErrorPlaceholder(context),
-                ),
-              ),
+                    tag: 'exercise_image_${exercise.id}',
+                    child: ColoredBox(
+                      color: Colors.white,
+                      child: Image.asset(
+                        exercise.imageUrl,
+                        fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) =>
+                            _buildErrorPlaceholder(context),
+                      ),
+                    ),
+                  ),
               // ── Dark gradient overlay ─────────────────────────────────
               Container(
                 decoration: BoxDecoration(
