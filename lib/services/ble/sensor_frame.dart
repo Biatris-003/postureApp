@@ -43,8 +43,8 @@ class SensorRow {
   // Magnetometer — units: uT  (scale 4912/32768 for 0x54; raw int for 0x71_mag)
   final double mx, my, mz;
 
-  // Quaternion from 0x71_quat reply (reg 0x51), scale 1/32768.
-  // Sensor sends q0=w, q1=x, q2=y, q3=z. Preprocessing applies reorder_wxyz to match training.
+  // Quaternion components — WitMotion 0x59 frame, scale 1/32768
+  // Stored in the same order the sensor sends: q0=w, q1=x, q2=y, q3=z
   final double q0, q1, q2, q3;
 
   /// True once a real quaternion packet (0x59) has been received for this device.
@@ -81,7 +81,7 @@ class DeviceState {
   double gx = 0, gy = 0, gz = 0;
   double angleX = 0, angleY = 0, angleZ = 0;
   double mx = 0, my = 0, mz = 0;
-  double q0 = 1, q1 = 0, q2 = 0, q3 = 0; // identity quat: w=q0=1 for no_reorder mode
+  double q0 = 0, q1 = 0, q2 = 0, q3 = 1; // identity quat default
   bool quatReal = false;
   bool hasAcc = false;
 }

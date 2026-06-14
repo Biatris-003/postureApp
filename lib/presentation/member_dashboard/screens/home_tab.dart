@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../data/datasources/ble_service_mock.dart';
 import '../../../data/datasources/ml_classifier_service_mock.dart';
+import '../../../data/datasources/auth_service_mock.dart';
 
 class HomeTab extends ConsumerStatefulWidget {
   const HomeTab({Key? key}) : super(key: key);
@@ -68,20 +70,45 @@ class _HomeTabState extends ConsumerState<HomeTab> with SingleTickerProviderStat
   }
 
   Widget _buildHeader(BuildContext context) {
+    final uid = ref.read(authStateProvider)?.uid;
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Good Morning,', 
-              style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6), fontWeight: FontWeight.w500),
-            ),
-            const SizedBox(height: 4),
-            Text('Sarah Connor', 
-              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, letterSpacing: -0.5, color: Theme.of(context).colorScheme.onSurface),
-            ),
-          ],
+        FutureBuilder<DocumentSnapshot>(
+          future: uid == null
+              ? null
+              : FirebaseFirestore.instance.collection('patients').doc(uid).get(),
+          builder: (context, snapshot) {
+            final name = snapshot.data?.get('fullName') as String? ?? 'User';
+            final hour = DateTime.now().hour;
+            final greeting = hour < 12
+                ? 'Good Morning,'
+                : hour < 17
+                    ? 'Good Afternoon,'
+                    : 'Good Evening,';
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(greeting,
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  name,
+                  style: TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: -0.5,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+              ],
+            );
+          },
         ),
         Container(
           padding: const EdgeInsets.all(12),

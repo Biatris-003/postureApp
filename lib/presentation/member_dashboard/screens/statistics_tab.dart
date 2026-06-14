@@ -59,7 +59,12 @@ class _StatisticsTabState extends ConsumerState<StatisticsTab> {
 
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
-    const userId = 'test_patient_001'; // hardcoded until auth is connected
+    // Get the real UID from the authenticated user
+    final userId = ref.read(authStateProvider)?.uid;
+    if (userId == null) {
+      setState(() => _isLoading = false);
+      return;
+    }
     final service = ref.read(analyticsServiceProvider);
 
     try {

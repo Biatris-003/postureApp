@@ -4,58 +4,75 @@ import '../../domain/entities/user.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-final authServiceProvider = Provider((ref) => MockAuthService());
+final authServiceProvider = Provider((ref) => AuthService());
 
 class AuthStateNotifier extends Notifier<AppUser?> {
-  static const _userKey = 'auth_user';
-
   @override
   AppUser? build() {
-    // Persistence disabled as requested: Always start at WelcomeScreen on refresh
+    // Persistence disabled: Always start at WelcomeScreen on refresh
     return null;
   }
 
-  void setUser(AppUser? user) async {
+  void setUser(AppUser? user) {
     state = user;
-    // We don't save to SharedPreferences anymore so it resets on refresh
   }
 }
-final authStateProvider = NotifierProvider<AuthStateNotifier, AppUser?>(AuthStateNotifier.new);
 
-class MockAuthService {
+final authStateProvider =
+    NotifierProvider<AuthStateNotifier, AppUser?>(AuthStateNotifier.new);
+
+class AuthService {
   final _auth = FirebaseAuth.instance;
   final _db = FirebaseFirestore.instance;
 
-  Future<AppUser> login(String email, String password, String intendedRole) async {
+  /// Signs in the user with [email] and [password].
+  /// Reads the user's role from the `users` collection.
+  /// Throws a descriptive [Exception] on any failure.
+  Future<AppUser> login(String email, String password,
+      [String intendedRole = 'Member']) async {
     try {
-      final credential = await _auth.signInWithEmailAndPassword(email: email, password: password);
-      final userDoc = await _db.collection('users').doc(credential.user!.uid).get();
-      
+      final credential = await _auth.signInWithEmailAndPassword(
+          email: email, password: password);
+      final uid = credential.user!.uid;
+
+      final userDoc = await _db.collection('users').doc(uid).get();
+
       if (!userDoc.exists) {
-        // Fallback for existing mock users or if profile is missing
-        String role = email.contains('advisor') ? 'Advisor' : 'Member';
-        return AppUser(uid: credential.user!.uid, email: email, role: role);
+        throw Exception(
+            'Account profile not found. Please sign up or contact support.');
       }
-      
+
       final data = userDoc.data()!;
       return AppUser(
-        uid: credential.user!.uid,
+        uid: uid,
         email: email,
         role: data['role'] ?? 'Member',
         profileData: data['profileData'],
       );
+    } on FirebaseAuthException catch (e) {
+      debugPrint('FirebaseAuthException during login: ${e.code} — ${e.message}');
+      switch (e.code) {
+        case 'user-not-found':
+          throw Exception('No account found for this email.');
+        case 'wrong-password':
+        case 'invalid-credential':
+          throw Exception('Incorrect password. Please try again.');
+        case 'invalid-email':
+          throw Exception('The email address is not valid.');
+        case 'user-disabled':
+          throw Exception('This account has been disabled.');
+        default:
+          throw Exception('Login failed: ${e.message}');
+      }
     } catch (e) {
-      // If Firebase fails or user not found, fallback to mock login for testing
-      // but only if it's a specific error (like user-not-found)
-      debugPrint('Firebase Login Error: $e. Falling back to mock logic.');
-      await Future.delayed(const Duration(seconds: 1));
-      
-      // Use 'c001' for Advisors to match the seeder data (Sara Ahmed etc.)
-      final uid = intendedRole == 'Advisor' ? 'c001' : 'p001';
-      return AppUser(uid: uid, email: email, role: intendedRole);
+      debugPrint('Login error: $e');
+      rethrow;
     }
   }
 
+  /// Creates a new Firebase Auth user, writes a document in `users`,
+  /// and also writes the full profile into the role-specific collection
+  /// (`patients` or `clinicians`) using the Firebase Auth UID as the document ID.
   Future<AppUser> signUp({
     required String email,
     required String password,
@@ -63,30 +80,54 @@ class MockAuthService {
     required Map<String, dynamic> profileData,
   }) async {
     try {
-      final credential = await _auth.createUserWithEmailAndPassword(email: email, password: password);
-      
-      await _db.collection('users').doc(credential.user!.uid).set({
+      final credential = await _auth.createUserWithEmailAndPassword(
+          email: email, password: password);
+      final uid = credential.user!.uid;
+
+      // Write to the shared `users` collection for role lookup on login
+      await _db.collection('users').doc(uid).set({
         'email': email,
         'role': role,
         'profileData': profileData,
         'createdAt': FieldValue.serverTimestamp(),
       });
 
+      // Write to the role-specific collection so dashboards can read profile data
+      final collection = role == 'Advisor' ? 'clinicians' : 'patients';
+      await _db.collection(collection).doc(uid).set({
+        ...profileData,
+        'uid': uid,
+        'contactEmail': email,
+        'role': role,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
       return AppUser(
-        uid: credential.user!.uid,
+        uid: uid,
         email: email,
         role: role,
         profileData: profileData,
       );
+
+    } on FirebaseAuthException catch (e) {
+      debugPrint('FirebaseAuthException during signup: ${e.code} — ${e.message}');
+      switch (e.code) {
+        case 'email-already-in-use':
+          throw Exception('An account with this email already exists.');
+        case 'weak-password':
+          throw Exception('Password is too weak. Use at least 6 characters.');
+        case 'invalid-email':
+          throw Exception('The email address is not valid.');
+        case 'operation-not-allowed':
+          throw Exception('Email/Password sign-in is disabled in your Firebase console. Please go to your console and enable it.');
+        case 'configuration-not-found':
+          throw Exception('Firebase Authentication has not been initialized. Please open your Firebase Console, click "Get Started" in the Authentication section, and make sure Email/Password provider is enabled.');
+        default:
+          throw Exception('Sign up failed [${e.code}]: ${e.message}');
+      }
     } catch (e) {
-      debugPrint('Firebase Signup Error: $e. Falling back to mock logic.');
-      await Future.delayed(const Duration(seconds: 1));
-      return AppUser(
-        uid: DateTime.now().millisecondsSinceEpoch.toString(),
-        email: email,
-        role: role,
-        profileData: profileData,
-      );
+      debugPrint('Signup error: $e');
+      rethrow;
     }
   }
 

@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'member_details_screen.dart';
 import '../../../domain/entities/assigned_member.dart';
 import '../../../data/datasources/advisor_data_service_mock.dart';
+import '../../../data/datasources/auth_service_mock.dart';
 
 class AssignedMembersTab extends ConsumerStatefulWidget {
   const AssignedMembersTab({Key? key}) : super(key: key);
@@ -26,10 +27,17 @@ class _AssignedMembersTabState extends ConsumerState<AssignedMembersTab> {
   Future<void> _loadPatients() async {
     setState(() => _isLoading = true);
     try {
+      // Get the current clinician's UID dynamically
+      final clinicianId = ref.read(authStateProvider)?.uid;
+      if (clinicianId == null) {
+        setState(() => _isLoading = false);
+        return;
+      }
+
       // Load all patients assigned to this clinician
       final snapshot = await FirebaseFirestore.instance
           .collection('patients')
-          .where('clinicianId', isEqualTo: 'c001')
+          .where('clinicianId', isEqualTo: clinicianId)
           .get();
 
       setState(() {

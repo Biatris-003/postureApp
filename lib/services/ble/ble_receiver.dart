@@ -6,17 +6,13 @@ import 'package:permission_handler/permission_handler.dart';
 
 import 'sensor_frame.dart';
 
-// Command to poll quaternion register 0x51 on WitMotion WT901BLECL.
-// Sensor replies with a 0x71 frame (reg_l=0x51) containing w,x,y,z.
-const List<int> _kQuatCmd = [0xFF, 0xAA, 0x27, 0x51, 0x00];
-
 /// MAC address → anatomical sensor label.
 /// Must match SENSOR_ID_MAP in load_and_predict_realtime.py exactly.
 const Map<String, String> kSensorIdMap = {
-  'ED:35:33:D3:6C:F8': 'C7',
-  'ED:40:FE:65:30:6C': 'T4',
-  'F6:90:CC:01:6D:25': 'T12',
-  'E3:CA:2D:FD:E0:8C': 'L5',
+  'ed:35:33:d3:6c:f8': 'C7',
+  'ed:40:fe:65:30:6c': 'T4',
+  'f6:90:cc:01:6d:25': 'T12',
+  'e3:ca:2d:fd:e0:8c': 'L5',
 };
 
 /// Connects to all four WitMotion BLE sensors, decodes raw frames, and emits
@@ -33,7 +29,6 @@ class BleReceiver {
   final Map<String, DeviceState> _states = {};
   final Map<String, BluetoothDevice> _devices = {};
   final List<StreamSubscription> _subs = [];
-  final List<Timer> _timers = [];
 
   bool _running = false;
 
@@ -53,10 +48,6 @@ class BleReceiver {
 
   Future<void> stop() async {
     _running = false;
-    for (final t in _timers) {
-      t.cancel();
-    }
-    _timers.clear();
     for (final sub in _subs) {
       await sub.cancel();
     }
@@ -87,27 +78,14 @@ class BleReceiver {
 
   /// Connects to one device and auto-reconnects on disconnect.
   void _connectDevice(String mac) async {
-    final label = kSensorIdMap[mac] ?? mac;
     while (_running) {
-      final device = BluetoothDevice.fromId(mac);
-      _devices[mac] = device;
-      Timer? quatTimer;
       try {
-        try { await device.disconnect(); } catch (_) {}
-        await Future<void>.delayed(const Duration(milliseconds: 300));
+        final device = BluetoothDevice.fromId(mac);
+        _devices[mac] = device;
 
-        // ignore: avoid_print
-        print('[BLE] $label: connecting...');
-        await device.connect(
-          timeout: const Duration(seconds: 20),
-          autoConnect: false,
-        );
-        // ignore: avoid_print
-        print('[BLE] $label: connected, discovering services...');
+        await device.connect(timeout: const Duration(seconds: 15));
 
         final services = await device.discoverServices();
-        BluetoothCharacteristic? writeChar;
-
         for (final service in services) {
           for (final char in service.characteristics) {
             if (char.properties.notify) {
@@ -117,46 +95,18 @@ class BleReceiver {
               });
               _subs.add(sub);
             }
-            if (char.uuid.toString().toLowerCase().contains('0000ffe9') &&
-                (char.properties.write || char.properties.writeWithoutResponse)) {
-              writeChar = char;
-            }
           }
         }
 
-        if (writeChar != null) {
-          // ignore: avoid_print
-          print('[BLE] $label: polling quaternion via FFE9 every 200ms');
-          final wc = writeChar;
-          quatTimer = Timer.periodic(const Duration(milliseconds: 200), (_) async {
-            if (!_running) return;
-            try {
-              await wc.write(_kQuatCmd, withoutResponse: true);
-            } catch (_) {}
-          });
-          _timers.add(quatTimer);
-        } else {
-          // ignore: avoid_print
-          print('[BLE] $label: write char FFE9 not found — no quat polling');
-        }
-
-        // ignore: avoid_print
-        print('[BLE] $label: subscribed, waiting for data...');
-
+        // Block until disconnected.
         await device.connectionState
             .firstWhere((s) => s == BluetoothConnectionState.disconnected);
-        // ignore: avoid_print
-        print('[BLE] $label: disconnected, retrying...');
-      } catch (e) {
-        // ignore: avoid_print
-        print('[BLE] $label: error — $e');
-      } finally {
-        quatTimer?.cancel();
-        _timers.remove(quatTimer);
+      } catch (_) {
+        // ignore — retry below
       }
 
       if (_running) {
-        await Future<void>.delayed(const Duration(seconds: 3));
+        await Future<void>.delayed(const Duration(seconds: 2));
       }
     }
   }

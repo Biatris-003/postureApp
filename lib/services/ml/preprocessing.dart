@@ -90,15 +90,14 @@ class Preprocessing {
     final n = rows.length;
     final blocks = <List<List<double>>>[];
 
-    for (int si = 0; si < sensors.length; si++) {
-      final sensor = sensors[si];
+    for (final sensor in sensors) {
       // Extract raw columns ─────────────────────────────────────────────────
       final acc = _extractCols(rows, sensor, accFeatures);   // (n, 3)
       final gyr = _extractCols(rows, sensor, gyroFeatures);  // (n, 3)
       final mag = _extractMag(rows, sensor);                 // (n, 3)
       final quatRaw = _extractCols(rows, sensor, quatFeatures); // (n, 4)
 
-      // Training used reorder_wxyz: treat sensor's q3 as w, q0 as x, q1 as y, q2 as z.
+      // Quaternion normalisation (reorder_wxyz mode) ────────────────────────
       final quats = List.generate(n, (i) {
         return _normalizeQuatReorderWxyz(
           quatRaw[i][0], quatRaw[i][1], quatRaw[i][2], quatRaw[i][3],
@@ -175,11 +174,12 @@ class Preprocessing {
 
   // ── Quaternion helpers (exact port of Python) ─────────────────────────────
 
-  /// Normalises a quaternion matching the training pipeline's reorder_wxyz mode.
-  /// Training stored sensor q0,q1,q2,q3 and reordered to [q3, q0, q1, q2] as [w,x,y,z].
+  /// normalizeQuat with mode="reorder_wxyz":
+  ///   input columns Q0..Q3 stored as [q0, q1, q2, q3]
+  ///   reorder to [q3, q0, q1, q2] = [w, x, y, z], then normalise.
   static List<double> _normalizeQuatReorderWxyz(
       double q0, double q1, double q2, double q3) {
-    var w = q3, x = q0, y = q1, z = q2; // reorder_wxyz: [q3,q0,q1,q2] → [w,x,y,z]
+    var w = q3, x = q0, y = q1, z = q2;
     final n = sqrt(w * w + x * x + y * y + z * z);
     if (n < 1e-8) return [1.0, 0.0, 0.0, 0.0];
     return [w / n, x / n, y / n, z / n];
@@ -315,13 +315,6 @@ class Preprocessing {
 
   static double _norm(List<double> v) =>
       sqrt(v.fold(0.0, (s, x) => s + x * x));
-
-  /// Wraps angle to (−π, π].
-  static double _wrapAngle(double a) {
-    while (a > pi) a -= 2 * pi;
-    while (a < -pi) a += 2 * pi;
-    return a;
-  }
 
   static double _median(List<double> values) {
     final sorted = List<double>.from(values)..sort();

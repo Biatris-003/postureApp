@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'assigned_members_tab.dart';
 import 'advisor_profile_tab.dart';
 import 'notifications_tab.dart';
+import '../../../data/datasources/auth_service_mock.dart';
 
 class AdvisorDashboardScreen extends ConsumerStatefulWidget {
   const AdvisorDashboardScreen({Key? key}) : super(key: key);
@@ -133,13 +134,16 @@ class _AdvisorDashboardScreenState
   Widget _buildNavItemWithLiveBadge(
       int index, IconData icon, IconData activeIcon, String label) {
     final isSelected = _currentIndex == index;
+    final clinicianId = ref.read(authStateProvider)?.uid;
 
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('notifications')
-          .where('clinicianId', isEqualTo: 'c001')
-          .where('isRead', isEqualTo: false)
-          .snapshots(),
+      stream: clinicianId == null
+          ? const Stream.empty()
+          : FirebaseFirestore.instance
+              .collection('notifications')
+              .where('clinicianId', isEqualTo: clinicianId)
+              .where('isRead', isEqualTo: false)
+              .snapshots(),
       builder: (context, snapshot) {
         final count = snapshot.data?.docs.length ?? 0;
 

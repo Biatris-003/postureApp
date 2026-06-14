@@ -133,20 +133,16 @@ class RealtimeProcessor {
     }
 
     try {
+      // Run preprocessing + inference off the main isolate via compute
+      // (synchronous here — Dart isolates would need SendPort; keep simple for now)
       var window = Preprocessing.preprocessWindow(snapshot, _winLen);
-      // ignore: avoid_print
-      print('[DBG] preNorm[0]: ${window[0].map((v) => v.toStringAsFixed(3)).toList()}');
-
       window = Preprocessing.applySensorNorm(
         window,
         _predictor!.means,
         _predictor!.stds,
       );
 
-      // ignore: avoid_print
-      print('[DBG] postNorm[0]: ${window[0].map((v) => v.toStringAsFixed(3)).toList()}');
       final probs = _predictor!.predict(window);
-
       double maxP = 0;
       int maxIdx = 0;
       for (int i = 0; i < probs.length; i++) {

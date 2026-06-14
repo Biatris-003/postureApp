@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'login_screen.dart';
-import 'signup_screen.dart';
+import 'firebase_debug_screen.dart';
 
 class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({Key? key}) : super(key: key);
@@ -107,6 +106,19 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
               ],
             ),
           ),
+        ),
+      ),
+      // ── Firebase Debug Button (tap 🔥 to check connection) ──
+      floatingActionButton: Tooltip(
+        message: 'Check Firebase connection',
+        child: FloatingActionButton.small(
+          backgroundColor: Colors.white.withValues(alpha: 0.15),
+          elevation: 0,
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const FirebaseDebugScreen()),
+          ),
+          child: const Text('🔥', style: TextStyle(fontSize: 18)),
         ),
       ),
     );

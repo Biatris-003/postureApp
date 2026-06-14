@@ -6,7 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'dart:convert';
 
-const String currentClinicianId = 'c001';
+
 
 class AdvisorProfileTab extends ConsumerStatefulWidget {
   const AdvisorProfileTab({Key? key}) : super(key: key);
@@ -19,6 +19,9 @@ class _AdvisorProfileTabState extends ConsumerState<AdvisorProfileTab> {
   Map<String, dynamic>? _clinicianData;
   bool _isLoading = true;
   bool _notificationsEnabled = true;
+
+  /// Returns the UID of the currently logged-in clinician.
+  String get _clinicianId => ref.read(authStateProvider)?.uid ?? '';
 
   @override
   void initState() {
@@ -44,7 +47,7 @@ class _AdvisorProfileTabState extends ConsumerState<AdvisorProfileTab> {
 
     await FirebaseFirestore.instance
         .collection('clinicians')
-        .doc(currentClinicianId)
+        .doc(_clinicianId)
         .update({'profileImageBase64': base64Image});
 
     await _loadClinicianData();
@@ -54,7 +57,7 @@ class _AdvisorProfileTabState extends ConsumerState<AdvisorProfileTab> {
     try {
       final doc = await FirebaseFirestore.instance
           .collection('clinicians')
-          .doc(currentClinicianId)
+          .doc(_clinicianId)
           .get();
       setState(() {
         _clinicianData = doc.data();
@@ -362,7 +365,7 @@ class _AdvisorProfileTabState extends ConsumerState<AdvisorProfileTab> {
               // Save to Firestore
               await FirebaseFirestore.instance
                   .collection('clinicians')
-                  .doc(currentClinicianId)
+                  .doc(_clinicianId)
                   .update({
                 'fullName': nameCtrl.text,
                 'specialty': specialtyCtrl.text,

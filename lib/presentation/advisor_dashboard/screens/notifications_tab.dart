@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../../data/datasources/auth_service_mock.dart';
 
-class NotificationsTab extends StatefulWidget {
+class NotificationsTab extends ConsumerStatefulWidget {
   const NotificationsTab({Key? key}) : super(key: key);
 
   @override
-  State<NotificationsTab> createState() => _NotificationsTabState();
+  ConsumerState<NotificationsTab> createState() => _NotificationsTabState();
 }
 
-class _NotificationsTabState extends State<NotificationsTab> {
+class _NotificationsTabState extends ConsumerState<NotificationsTab> {
   List<Map<String, dynamic>> _notifications = [];
   bool _isLoading = true;
 
@@ -41,83 +43,26 @@ class _NotificationsTabState extends State<NotificationsTab> {
     },
   };
 
+  String? get _clinicianId => ref.read(authStateProvider)?.uid;
+
   @override
   void initState() {
     super.initState();
     _loadNotifications();
-    _seedMockNotificationsIfEmpty();
-  }
-
-  // Seed some mock notifications so the page isn't empty
-  Future<void> _seedMockNotificationsIfEmpty() async {
-    final snapshot = await FirebaseFirestore.instance
-        .collection('notifications')
-        .where('clinicianId', isEqualTo: 'c001')
-        .get();
-
-    if (snapshot.docs.isNotEmpty) return;
-
-    final mockNotifications = [
-      {
-        'clinicianId': 'c001',
-        'patientId': 'p001',
-        'patientName': 'Sara Ahmed',
-        'type': 'new_report',
-        'message': 'Sara Ahmed has generated a new weekly posture report.',
-        'timestamp': DateTime.now().subtract(const Duration(minutes: 10)).toIso8601String(),
-        'isRead': false,
-      },
-      {
-        'clinicianId': 'c001',
-        'patientId': 'p001',
-        'patientName': 'Sara Ahmed',
-        'type': 'bad_posture_streak',
-        'message': 'Sara Ahmed has been in poor posture for over 2 hours today.',
-        'timestamp': DateTime.now().subtract(const Duration(hours: 2)).toIso8601String(),
-        'isRead': false,
-      },
-      {
-        'clinicianId': 'c001',
-        'patientId': 'p001',
-        'patientName': 'Sara Ahmed',
-        'type': 'exercise_completed',
-        'message': 'Sara Ahmed completed all exercises for today.',
-        'timestamp': DateTime.now().subtract(const Duration(hours: 5)).toIso8601String(),
-        'isRead': true,
-      },
-      {
-        'clinicianId': 'c001',
-        'patientId': 'p001',
-        'patientName': 'Sara Ahmed',
-        'type': 'low_compliance',
-        'message': 'Sara Ahmed\'s exercise compliance dropped to 40% this week.',
-        'timestamp': DateTime.now().subtract(const Duration(days: 1)).toIso8601String(),
-        'isRead': true,
-      },
-      {
-        'clinicianId': 'c001',
-        'patientId': 'p001',
-        'patientName': 'Sara Ahmed',
-        'type': 'new_report',
-        'message': 'Sara Ahmed generated a monthly posture analysis report.',
-        'timestamp': DateTime.now().subtract(const Duration(days: 2)).toIso8601String(),
-        'isRead': true,
-      },
-    ];
-
-    for (final n in mockNotifications) {
-      await FirebaseFirestore.instance.collection('notifications').add(n);
-    }
-
-    _loadNotifications();
   }
 
   Future<void> _loadNotifications() async {
+    final id = _clinicianId;
+    if (id == null) {
+      setState(() => _isLoading = false);
+      return;
+    }
+
     setState(() => _isLoading = true);
     try {
       final snapshot = await FirebaseFirestore.instance
           .collection('notifications')
-          .where('clinicianId', isEqualTo: 'c001')
+          .where('clinicianId', isEqualTo: id)
           .orderBy('timestamp', descending: true)
           .get();
 
