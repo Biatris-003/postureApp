@@ -4,7 +4,7 @@ import '../../../data/datasources/ble_service_mock.dart';
 import '../../../data/datasources/ml_classifier_service_mock.dart';
 
 class HomeTab extends ConsumerStatefulWidget {
-  const HomeTab({Key? key}) : super(key: key);
+  const HomeTab({super.key});
 
   @override
   ConsumerState<HomeTab> createState() => _HomeTabState();
@@ -219,8 +219,9 @@ class _HomeTabState extends ConsumerState<HomeTab> with SingleTickerProviderStat
     double score = isUpright ? 80 + (confidence * 20) : (1.0 - confidence) * 79;
     Color sliderColor = Theme.of(context).primaryColor;
     
-    if (score > 80) sliderColor = const Color(0xFF10B981);
-    else if (score > 50) sliderColor = const Color(0xFFF59E0B);
+    if (score > 80) {
+      sliderColor = const Color(0xFF10B981);
+    } else if (score > 50) sliderColor = const Color(0xFFF59E0B);
     else sliderColor = const Color(0xFFEF4444);
 
     return Container(

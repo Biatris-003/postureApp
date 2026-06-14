@@ -5,7 +5,7 @@ import '../../../data/datasources/auth_service_mock.dart';
 class SignupScreen extends ConsumerStatefulWidget {
   final String role; // 'Member' or 'Advisor'
 
-  const SignupScreen({Key? key, required this.role}) : super(key: key);
+  const SignupScreen({super.key, required this.role});
 
   @override
   ConsumerState<SignupScreen> createState() => _SignupScreenState();
@@ -279,7 +279,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
     required void Function(String?) onChanged,
   }) {
     return DropdownButtonFormField<String>(
-      value: value,
+      initialValue: value,
       onChanged: onChanged,
       items: items.map((item) {
         return DropdownMenuItem(value: item, child: Text(item));

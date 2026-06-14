@@ -6,7 +6,7 @@ import 'signup_screen.dart';
 class LoginScreen extends ConsumerStatefulWidget {
   final String initialRole; // 'Member' or 'Advisor'
 
-  const LoginScreen({Key? key, required this.initialRole}) : super(key: key);
+  const LoginScreen({super.key, required this.initialRole});
 
   @override
   ConsumerState<LoginScreen> createState() => _LoginScreenState();

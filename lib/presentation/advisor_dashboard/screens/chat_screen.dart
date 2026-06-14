@@ -11,11 +11,11 @@ class ChatScreen extends ConsumerStatefulWidget {
   final String recipientName;
 
   const ChatScreen({
-    Key? key,
+    super.key,
     required this.chatId,
     required this.recipientId,
     required this.recipientName,
-  }) : super(key: key);
+  });
 
   @override
   ConsumerState<ChatScreen> createState() => _ChatScreenState();

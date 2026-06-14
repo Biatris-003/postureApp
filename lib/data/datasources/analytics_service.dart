@@ -110,14 +110,28 @@ class AnalyticsService {
   }
 
   // Get classifications for last N days
+  // Future<List<PostureClassification>> getClassificationsByDays(
+  //     String patientId, int days) async {
+  //   final since = DateTime.now().subtract(Duration(days: days));
+  //   final sinceTimestamp = Timestamp.fromDate(since); 
+  //   final snapshot = await _db
+  //       .collection('postureClassifications')
+  //       .where('patientId', isEqualTo: patientId)
+  //       .where('timestamp', isGreaterThan: sinceTimestamp)
+  //       .orderBy('timestamp')
+  //       .get();
+
+  //   return snapshot.docs
+  //       .map((doc) => PostureClassification.fromMap(doc.data(), doc.id))
+  //       .toList();
+  // }
+
   Future<List<PostureClassification>> getClassificationsByDays(
-      String patientId, int days) async {
-    final since = DateTime.now().subtract(Duration(days: days));
-    final sinceTimestamp = Timestamp.fromDate(since); 
+    String patientId, int days) async {
+    // ✨ CHANGE: Instead of filtering by date, get ALL data
     final snapshot = await _db
         .collection('postureClassifications')
         .where('patientId', isEqualTo: patientId)
-        .where('timestamp', isGreaterThan: sinceTimestamp)
         .orderBy('timestamp')
         .get();
 

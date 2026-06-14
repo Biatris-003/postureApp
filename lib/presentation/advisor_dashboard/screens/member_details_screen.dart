@@ -9,7 +9,7 @@ import 'dart:typed_data';
 class MemberDetailsScreen extends ConsumerStatefulWidget {
   final AssignedMember member;
 
-  const MemberDetailsScreen({Key? key, required this.member}) : super(key: key);
+  const MemberDetailsScreen({super.key, required this.member});
 
   @override
   ConsumerState<MemberDetailsScreen> createState() => _MemberDetailsScreenState();
@@ -917,7 +917,7 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
                     keyboardType: TextInputType.number),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
-                  value: selectedRegion,
+                  initialValue: selectedRegion,
                   decoration: InputDecoration(
                     labelText: 'Target Region',
                     border: OutlineInputBorder(
@@ -1021,7 +1021,7 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
                     keyboardType: TextInputType.number),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<String>(
-                  value: selectedRegion,
+                  initialValue: selectedRegion,
                   decoration: InputDecoration(
                     labelText: 'Target Region',
                     border: OutlineInputBorder(

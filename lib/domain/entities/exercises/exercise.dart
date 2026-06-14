@@ -2,40 +2,48 @@ class Exercise {
   final String id;
   String title;
   String description;
-  final String duration;
-  final String frequency;
+  final String reps;
+  final String sets;
+  final String duration;        // ← add this
+  final String difficultyLevel;
   final String iconCode;
   final String imageUrl;
-  final String? modelUrl; // Adding modelUrl as optional
+  final String? videoAssetPath;
 
   Exercise({
     required this.id,
     required this.title,
     required this.description,
-    required this.duration,
-    required this.frequency,
+    required this.reps,
+    required this.sets,
+    required this.duration,     // ← add this
+    required this.difficultyLevel,
     required this.iconCode,
     required this.imageUrl,
-    this.modelUrl,
+    this.videoAssetPath,
   });
 
   Exercise copyWith({
     String? title,
     String? description,
-    String? duration,
-    String? frequency,
+    String? reps,
+    String? sets,
+    String? duration,           // ← add this
+    String? difficultyLevel,
     String? imageUrl,
-    String? modelUrl,
+    String? videoAssetPath,
   }) {
     return Exercise(
       id: id,
       title: title ?? this.title,
       description: description ?? this.description,
-      duration: duration ?? this.duration,
-      frequency: frequency ?? this.frequency,
+      reps: reps ?? this.reps,
+      sets: sets ?? this.sets,
+      duration: duration ?? this.duration,   // ← add this
+      difficultyLevel: difficultyLevel ?? this.difficultyLevel,
       iconCode: iconCode,
       imageUrl: imageUrl ?? this.imageUrl,
-      modelUrl: modelUrl ?? this.modelUrl,
+      videoAssetPath: videoAssetPath ?? this.videoAssetPath,
     );
   }
 }

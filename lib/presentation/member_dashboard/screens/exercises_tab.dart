@@ -2,27 +2,41 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/datasources/auth_service_mock.dart';
 import '../../../data/datasources/advisor_data_service_mock.dart';
+import '../../../data/datasources/exercise_recommendation_service.dart';
 import '../../../domain/entities/exercises/exercise.dart';
 import 'exercise_detail_screen.dart';
+import 'statistics_tab.dart';
 
 class ExercisesTab extends ConsumerWidget {
   const ExercisesTab({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Determine current user ID; if null default to string '1' for mock testing.
     final currentUser = ref.watch(authStateProvider);
     final String uid = currentUser?.uid ?? '1';
-    
-    // Listen directly to the global exercise state
-    final mappedExercises = ref.watch(exerciseProvider);
-    final List<Exercise> exercises = mappedExercises[uid] ?? [];
 
+    final postureCountMap = postureCountsCache;
+    final recommendationService = ref.watch(exerciseRecommendationServiceProvider);
+    final recommendedExercises =
+        recommendationService.getRecommendedExercisesFromCounts(postureCountMap);
+
+    // final mappedExercises = ref.watch(exerciseProvider);
+    // final defaultExercises = mappedExercises[uid] ?? [];
+
+    final mappedExercises = ref.watch(exerciseProvider);
+    final defaultExercises = mappedExercises['1'] ?? [];
+    // final List<Exercise> exercises =
+    //     recommendedExercises.isNotEmpty ? recommendedExercises : defaultExercises;
+
+    final List<Exercise> exercises = defaultExercises;
     if (exercises.isEmpty) {
       return Center(
         child: Text(
-          "No exercises assigned currently.",
-          style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5)),
+          'No exercises assigned currently.',
+          style: TextStyle(
+            fontSize: 16,
+            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+          ),
         ),
       );
     }
@@ -34,14 +48,34 @@ class ExercisesTab extends ConsumerWidget {
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(24, 32, 24, 16),
             sliver: SliverToBoxAdapter(
-              child: Text(
-                'Your Plan',
-                style: TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.5,
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Your Plan',
+                    style: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.5,
+                      color: Theme.of(context).colorScheme.onSurface,
+                    ),
+                  ),
+                  if (recommendedExercises.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8.0),
+                      child: Text(
+                        'Based on your posture patterns',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurface
+                              .withValues(alpha: 0.6),
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
           ),
@@ -65,7 +99,20 @@ class ExercisesTab extends ConsumerWidget {
     );
   }
 
+  Color _difficultyColor(String level) {
+    switch (level.toLowerCase()) {
+      case 'intermediate':
+        return const Color(0xFFF59E0B);
+      case 'advanced':
+        return const Color(0xFFEF4444);
+      default:
+        return const Color(0xFF22C55E);
+    }
+  }
+
   Widget _buildExerciseCard(BuildContext context, Exercise exercise) {
+    final diffColor = _difficultyColor(exercise.difficultyLevel);
+
     return GestureDetector(
       onTap: () {
         Navigator.push(
@@ -76,7 +123,7 @@ class ExercisesTab extends ConsumerWidget {
         );
       },
       child: Container(
-        height: 220,
+        height: 240,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(28),
           boxShadow: [
@@ -92,22 +139,17 @@ class ExercisesTab extends ConsumerWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // Background Image with Hero
+              // ── Background image ─────────────────────────────────────
               Hero(
                 tag: 'exercise_image_${exercise.id}',
-                child: exercise.imageUrl.startsWith('http')
-                    ? Image.network(
-                        exercise.imageUrl,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => _buildErrorPlaceholder(context),
-                      )
-                    : Image.asset(
-                        exercise.imageUrl,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => _buildErrorPlaceholder(context),
-                      ),
+                child: Image.asset(
+                  exercise.imageUrl,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) =>
+                      _buildErrorPlaceholder(context),
+                ),
               ),
-              // Gradient Overlay
+              // ── Dark gradient overlay ─────────────────────────────────
               Container(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
@@ -117,13 +159,35 @@ class ExercisesTab extends ConsumerWidget {
                       Colors.transparent,
                       Colors.black.withValues(alpha: 0.85),
                     ],
-                    stops: const [0.3, 1.0],
+                    stops: const [0.25, 1.0],
                   ),
                 ),
               ),
-              // Content
+              // ── Difficulty badge (top-right) ──────────────────────────
+              Positioned(
+                top: 16,
+                right: 16,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: diffColor.withValues(alpha: 0.85),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    exercise.difficultyLevel,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                ),
+              ),
+              // ── Bottom content ────────────────────────────────────────
               Padding(
-                padding: const EdgeInsets.all(24.0),
+                padding: const EdgeInsets.all(20.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.end,
@@ -132,63 +196,80 @@ class ExercisesTab extends ConsumerWidget {
                       exercise.title,
                       style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 24,
+                        fontSize: 22,
                         fontWeight: FontWeight.w800,
                         letterSpacing: -0.5,
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 6),
                     Text(
-                      exercise.description,
-                      maxLines: 2,
+                      exercise.description.split('\n').first,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.8),
-                        fontSize: 14,
+                        color: Colors.white.withValues(alpha: 0.75),
+                        fontSize: 13,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 14),
+                    // ── Reps / Sets / Duration row ────────────────────
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        Expanded(
-                          child: Row(
-                            children: [
-                              Icon(Icons.schedule_rounded, color: Colors.white.withValues(alpha: 0.8), size: 18),
-                              const SizedBox(width: 6),
-                              Text(
-                                exercise.duration,
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.9),
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              Icon(Icons.repeat_rounded, color: Colors.white.withValues(alpha: 0.8), size: 18),
-                              const SizedBox(width: 6),
-                              Text(
-                                exercise.frequency,
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.9),
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ],
+                        // Reps
+                        Icon(Icons.repeat_rounded,
+                            color: Colors.white.withValues(alpha: 0.85),
+                            size: 16),
+                        const SizedBox(width: 5),
+                        Text(
+                          exercise.reps,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.9),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
                           ),
                         ),
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.25),
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white.withValues(alpha: 0.4)),
+                        const SizedBox(width: 14),
+                        // Sets
+                        Icon(Icons.layers_rounded,
+                            color: Colors.white.withValues(alpha: 0.85),
+                            size: 16),
+                        const SizedBox(width: 5),
+                        Text(
+                          exercise.sets,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.9),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
                           ),
-                          child: const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 16),
-                        )
+                        ),
+                        const SizedBox(width: 14),
+                        // Duration
+                        Icon(Icons.timer_outlined,
+                            color: Colors.white.withValues(alpha: 0.85),
+                            size: 16),
+                        const SizedBox(width: 5),
+                        Text(
+                          exercise.duration,
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.9),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const Spacer(),
+                        // Arrow button
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.2),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.35)),
+                          ),
+                          child: const Icon(Icons.arrow_forward_ios_rounded,
+                              color: Colors.white, size: 14),
+                        ),
                       ],
                     ),
                   ],
@@ -204,7 +285,12 @@ class ExercisesTab extends ConsumerWidget {
   Widget _buildErrorPlaceholder(BuildContext context) {
     return Container(
       color: Theme.of(context).cardColor,
-      child: Icon(Icons.image_not_supported_rounded, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3), size: 40),
+      child: Icon(
+        Icons.image_not_supported_rounded,
+        color:
+            Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
+        size: 40,
+      ),
     );
   }
 }

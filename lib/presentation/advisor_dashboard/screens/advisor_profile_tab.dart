@@ -3,13 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../data/datasources/auth_service_mock.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:io';
 import 'dart:convert';
 
 const String currentClinicianId = 'c001';
 
 class AdvisorProfileTab extends ConsumerStatefulWidget {
-  const AdvisorProfileTab({Key? key}) : super(key: key);
+  const AdvisorProfileTab({super.key});
 
   @override
   ConsumerState<AdvisorProfileTab> createState() => _AdvisorProfileTabState();
@@ -296,7 +295,7 @@ class _AdvisorProfileTabState extends ConsumerState<AdvisorProfileTab> {
           Switch(
             value: value,
             onChanged: onChanged,
-            activeColor: const Color(0xFF1565C0),
+            activeThumbColor: const Color(0xFF1565C0),
           ),
         ],
       ),

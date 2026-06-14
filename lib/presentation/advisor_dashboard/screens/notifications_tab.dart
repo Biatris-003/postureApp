@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class NotificationsTab extends StatefulWidget {
-  const NotificationsTab({Key? key}) : super(key: key);
+  const NotificationsTab({super.key});
 
   @override
   State<NotificationsTab> createState() => _NotificationsTabState();

@@ -9,7 +9,7 @@ import 'spine_view_tab.dart';
 import 'profile_tab.dart';
 
 class MemberDashboardScreen extends ConsumerStatefulWidget {
-  const MemberDashboardScreen({Key? key}) : super(key: key);
+  const MemberDashboardScreen({super.key});
 
   @override
   ConsumerState<MemberDashboardScreen> createState() => _MemberDashboardScreenState();

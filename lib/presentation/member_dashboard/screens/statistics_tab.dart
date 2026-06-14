@@ -1,3 +1,38 @@
+// import 'package:flutter/material.dart';
+// import 'package:flutter_riverpod/flutter_riverpod.dart';
+// import 'package:fl_chart/fl_chart.dart';
+// import '../../../data/datasources/analytics_service.dart';
+// import '../../../domain/entities/posture_classification.dart';
+// import 'package:pdf/pdf.dart';
+// import 'package:pdf/widgets.dart' as pw;
+// import 'package:printing/printing.dart';
+// import 'package:cloud_firestore/cloud_firestore.dart';
+// import 'dart:async';
+// import 'dart:convert';
+// import 'package:path_provider/path_provider.dart';
+// import 'dart:io';
+// import 'package:flutter_riverpod/flutter_riverpod.dart';
+// import 'package:flutter_riverpod/flutter_riverpod.dart';
+// import '../../../data/datasources/auth_service_mock.dart';
+
+// // Provider for analytics service
+// final analyticsServiceProvider = Provider((ref) => AnalyticsService());
+// // Posture counts notifier
+// class PostureCountsNotifier extends StateNotifier<Map<String, int>> {
+//   PostureCountsNotifier() : super({});
+
+//   void updateCounts(Map<String, int> newCounts) {
+//     state = newCounts;
+//   }
+// }
+
+// // Provider for posture counts
+// final postureCountsProvider = 
+//     StateNotifierProvider<PostureCountsNotifier, Map<String, int>>(
+//       (ref) => PostureCountsNotifier(),
+//     );
+
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -16,10 +51,14 @@ import '../../../data/datasources/auth_service_mock.dart';
 // Provider for analytics service
 final analyticsServiceProvider = Provider((ref) => AnalyticsService());
 
+// ✨ Global variable to hold posture counts (accessed by exercises tab)
+Map<String, int> postureCountsCache = {};
+
+
 // The current user ID will be retrieved from the authStateProvider
 
 class StatisticsTab extends ConsumerStatefulWidget {
-  const StatisticsTab({Key? key}) : super(key: key);
+  const StatisticsTab({super.key});
 
   @override
   ConsumerState<StatisticsTab> createState() => _StatisticsTabState();
@@ -59,9 +98,15 @@ class _StatisticsTabState extends ConsumerState<StatisticsTab> {
 
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
-    const userId = 'test_patient_001'; // hardcoded until auth is connected
-    final service = ref.read(analyticsServiceProvider);
+    // const userId = 'test_patient_001'; // hardcoded until auth is connected
+    // final service = ref.read(analyticsServiceProvider);
 
+    // ✨ FIXED: Use the actual logged-in user instead of hardcoded ID
+    final user = ref.read(authStateProvider);
+    print('👤 Current User: ${user?.uid} | ${user?.email}');
+    final userId = 'test_patient_001';
+    
+    final service = ref.read(analyticsServiceProvider);
     try {
       List<PostureClassification> data;
       if (_selectedTimeRange == 0) {
@@ -71,6 +116,13 @@ class _StatisticsTabState extends ConsumerState<StatisticsTab> {
       } else {
         data = await service.getClassificationsByDays(userId, 30);
       }
+
+    print('📊 Data retrieved: ${data.length} readings for user $userId');
+    
+      // ✨ Store in global cache
+    final counts = service.calculatePostureCounts(data);
+    postureCountsCache = counts;
+    print('📈 Posture counts: $postureCountsCache');
       setState(() {
         _data = data;
         _isLoading = false;
@@ -517,7 +569,7 @@ Widget _buildPieChart(AnalyticsService service) {
   final counts = service.calculatePostureCounts(_data);
   
   // Timer for auto-reset
-  Timer? _resetTimer;
+  Timer? resetTimer;
   
   final postureConfig = [
     {'key': 'upright',          'name': 'Upright',          'color': const Color(0xFF5B8FF9)},
@@ -574,7 +626,7 @@ Widget _buildPieChart(AnalyticsService service) {
                         touchCallback: (event, response) {
                           setLocalState(() {
                             // Cancel any existing timer
-                            _resetTimer?.cancel();
+                            resetTimer?.cancel();
                             
                             // If nothing valid is touched → do nothing
                             if (response == null ||
@@ -594,7 +646,7 @@ Widget _buildPieChart(AnalyticsService service) {
                             _touchedPieIndex = index;
                             
                             // Start timer to reset after 3 seconds
-                            _resetTimer = Timer(const Duration(seconds: 3), () {
+                            resetTimer = Timer(const Duration(seconds: 3), () {
                               if (mounted) {
                                 setLocalState(() {
                                   _touchedPieIndex = null;

@@ -8,7 +8,7 @@ import 'advisor_profile_tab.dart';
 import 'notifications_tab.dart';
 
 class AdvisorDashboardScreen extends ConsumerStatefulWidget {
-  const AdvisorDashboardScreen({Key? key}) : super(key: key);
+  const AdvisorDashboardScreen({super.key});
 
   @override
   ConsumerState<AdvisorDashboardScreen> createState() =>

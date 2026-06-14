@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/datasources/chat_service_mock.dart';
 
 class AssistantTab extends ConsumerStatefulWidget {
-  const AssistantTab({Key? key}) : super(key: key);
+  const AssistantTab({super.key});
 
   @override
   ConsumerState<AssistantTab> createState() => _AssistantTabState();

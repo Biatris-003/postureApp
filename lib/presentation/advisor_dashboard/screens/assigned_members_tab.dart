@@ -3,10 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'member_details_screen.dart';
 import '../../../domain/entities/assigned_member.dart';
-import '../../../data/datasources/advisor_data_service_mock.dart';
 
 class AssignedMembersTab extends ConsumerStatefulWidget {
-  const AssignedMembersTab({Key? key}) : super(key: key);
+  const AssignedMembersTab({super.key});
 
   @override
   ConsumerState<AssignedMembersTab> createState() => _AssignedMembersTabState();

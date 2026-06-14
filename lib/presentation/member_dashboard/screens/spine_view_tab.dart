@@ -5,7 +5,7 @@ import '../../../data/datasources/ble_service_mock.dart';
 import '../../../data/datasources/ml_classifier_service_mock.dart';
 
 class SpineViewTab extends ConsumerStatefulWidget {
-  const SpineViewTab({Key? key}) : super(key: key);
+  const SpineViewTab({super.key});
 
   @override
   ConsumerState<SpineViewTab> createState() => _SpineViewTabState();
