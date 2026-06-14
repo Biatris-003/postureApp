@@ -30,7 +30,7 @@ class ExerciseNotifier extends Notifier<Map<String, List<Exercise>>> {
   @override
 Map<String, List<Exercise>> build() {
   return {
-    '1': [
+    'patient001': [
       Exercise(
         id: 'ex1',
         title: 'Chest Stretch',

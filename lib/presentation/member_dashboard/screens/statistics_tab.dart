@@ -103,8 +103,8 @@ class _StatisticsTabState extends ConsumerState<StatisticsTab> {
 
     // ✨ FIXED: Use the actual logged-in user instead of hardcoded ID
     final user = ref.read(authStateProvider);
-    print('👤 Current User: ${user?.uid} | ${user?.email}');
-    final userId = 'test_patient_001';
+    final userId = user?.userId ?? 'unknown';
+    print('👤 Current User: ${user?.uid} | ${user?.email} | ${user?.userId}');
     
     final service = ref.read(analyticsServiceProvider);
     try {
@@ -1031,7 +1031,7 @@ Widget _buildPieChart(AnalyticsService service) {
           .collection('patients')
           .doc(user?.uid ?? 'unknown')
           .get();
-      final patient = patientDoc.data()!;
+      final patient = patientDoc.data()??{};
 
       final percentages = service.calculatePosturePercentages(_data);
       final counts = service.calculatePostureCounts(_data);

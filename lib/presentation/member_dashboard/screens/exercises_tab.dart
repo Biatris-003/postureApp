@@ -13,7 +13,7 @@ class ExercisesTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final currentUser = ref.watch(authStateProvider);
-    final String uid = currentUser?.uid ?? '1';
+    final String userId = currentUser?.userId ?? 'unknown';
 
     final postureCountMap = postureCountsCache;
     final recommendationService = ref.watch(exerciseRecommendationServiceProvider);
@@ -24,7 +24,7 @@ class ExercisesTab extends ConsumerWidget {
     // final defaultExercises = mappedExercises[uid] ?? [];
 
     final mappedExercises = ref.watch(exerciseProvider);
-    final defaultExercises = mappedExercises['1'] ?? [];
+    final defaultExercises = mappedExercises[userId] ?? [];
     // final List<Exercise> exercises =
     //     recommendedExercises.isNotEmpty ? recommendedExercises : defaultExercises;
 

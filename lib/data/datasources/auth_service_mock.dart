@@ -4,16 +4,6 @@ import '../../domain/entities/user.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-// ─────────────────────────────────────────────────────────────
-// User ID Mapping: Maps emails to clean user IDs
-// Update this map to add new patients
-// ─────────────────────────────────────────────────────────────
-const Map<String, String> emailToUserIdMapping = {
-  'patient@test.com': 'patient001',
-  'advisor@test.com': 'advisor001',
-  // Add more here: 'patient2@test.com': 'patient002', etc.
-};
-
 final authServiceProvider = Provider((ref) => FirebaseAuthService());
 
 class AuthStateNotifier extends Notifier<AppUser?> {
@@ -37,16 +27,11 @@ class FirebaseAuthService {
   final _auth = FirebaseAuth.instance;
   final _db = FirebaseFirestore.instance;
 
-  /// Get the user ID for this email
-  String _getUserIdForEmail(String email) {
-    return emailToUserIdMapping[email] ?? 'user_${DateTime.now().millisecondsSinceEpoch}';
-  }
-
   /// Login with Firebase Authentication
   Future<AppUser> login(String email, String password) async {
     try {
       debugPrint('🔐 Attempting login for: $email');
-      
+
       final credential = await _auth.signInWithEmailAndPassword(
         email: email.trim(),
         password: password,
@@ -56,27 +41,30 @@ class FirebaseAuthService {
 
       // Fetch user profile from Firestore
       final userDoc = await _db.collection('users').doc(credential.user!.uid).get();
-      final userId = _getUserIdForEmail(email);
 
       if (userDoc.exists) {
         debugPrint('✅ User document found in Firestore');
         final data = userDoc.data()!;
         final role = data['role'] as String?;
-        
+
+        // Read userId from Firestore document (e.g. "patient001")
+        final userId = data['userId'] as String? ?? credential.user!.uid;
+
+        debugPrint('✅ userId from Firestore: $userId | role: $role');
+
         if (role == null) {
           throw Exception('User role not set in Firestore. Please contact admin.');
         }
-        
+
         return AppUser(
           uid: credential.user!.uid,
           userId: userId,
           email: email,
-          role: role,  // ← Get role from Firestore, not from parameter
+          role: role,
           profileData: data['profileData'],
         );
       }
 
-      // If user doc doesn't exist, throw error instead of creating fallback
       throw Exception('User profile not found in Firestore. Please contact admin.');
     } on FirebaseAuthException catch (e) {
       debugPrint('❌ Firebase Auth Error: ${e.code} - ${e.message}');
@@ -96,13 +84,14 @@ class FirebaseAuthService {
   }) async {
     try {
       debugPrint('📝 Attempting signup for: $email');
-      
+
       final credential = await _auth.createUserWithEmailAndPassword(
         email: email.trim(),
         password: password,
       );
 
-      final userId = _getUserIdForEmail(email);
+      // Auto-generate userId from Firebase UID
+      final userId = credential.user!.uid;
 
       debugPrint('✅ Firebase account created with uid: ${credential.user!.uid}');
 
