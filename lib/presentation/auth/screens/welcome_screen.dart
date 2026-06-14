@@ -36,7 +36,6 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Logo/Icon
                 AnimatedScale(
                   scale: _isVisible ? 1.0 : 0.8,
                   duration: const Duration(seconds: 1),
@@ -84,7 +83,6 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                 ),
                 const SizedBox(height: 60),
                 
-                // Role Selection Cards
                 _buildRoleCard(
                   context,
                   title: 'I am a Patient',

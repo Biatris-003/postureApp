@@ -4,58 +4,100 @@ import '../../domain/entities/user.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-final authServiceProvider = Provider((ref) => MockAuthService());
+// ─────────────────────────────────────────────────────────────
+// User ID Mapping: Maps emails to clean user IDs
+// Update this map to add new patients
+// ─────────────────────────────────────────────────────────────
+const Map<String, String> emailToUserIdMapping = {
+  'patient@test.com': 'patient001',
+  'advisor@test.com': 'advisor001',
+  // Add more here: 'patient2@test.com': 'patient002', etc.
+};
+
+final authServiceProvider = Provider((ref) => FirebaseAuthService());
 
 class AuthStateNotifier extends Notifier<AppUser?> {
-  static const _userKey = 'auth_user';
-
   @override
   AppUser? build() {
-    // Persistence disabled as requested: Always start at WelcomeScreen on refresh
     return null;
   }
 
-  void setUser(AppUser? user) async {
+  void setUser(AppUser? user) {
     state = user;
-    // We don't save to SharedPreferences anymore so it resets on refresh
+  }
+
+  void logout() {
+    state = null;
   }
 }
+
 final authStateProvider = NotifierProvider<AuthStateNotifier, AppUser?>(AuthStateNotifier.new);
 
-class MockAuthService {
+class FirebaseAuthService {
   final _auth = FirebaseAuth.instance;
   final _db = FirebaseFirestore.instance;
 
+  /// Get the user ID for this email
+  String _getUserIdForEmail(String email, String role) {
+    // First check if email is in mapping
+    if (emailToUserIdMapping.containsKey(email)) {
+      return emailToUserIdMapping[email]!;
+    }
+    
+    // Fallback: generate based on role
+    if (role == 'Advisor') {
+      return 'advisor_${DateTime.now().millisecondsSinceEpoch}';
+    }
+    return 'patient_${DateTime.now().millisecondsSinceEpoch}';
+  }
+
+  /// Login with Firebase Authentication
   Future<AppUser> login(String email, String password, String intendedRole) async {
     try {
-      final credential = await _auth.signInWithEmailAndPassword(email: email, password: password);
+      debugPrint('🔐 Attempting login for: $email');
+      
+      final credential = await _auth.signInWithEmailAndPassword(
+        email: email.trim(),
+        password: password,
+      );
+
+      debugPrint('✅ Firebase auth successful for uid: ${credential.user!.uid}');
+
+      // Fetch user profile from Firestore
       final userDoc = await _db.collection('users').doc(credential.user!.uid).get();
-      
-      if (!userDoc.exists) {
-        // Fallback for existing mock users or if profile is missing
-        String role = email.contains('advisor') ? 'Advisor' : 'Member';
-        return AppUser(uid: credential.user!.uid, email: email, role: role);
+      final userId = _getUserIdForEmail(email, intendedRole);
+
+      if (userDoc.exists) {
+        debugPrint('✅ User document found in Firestore');
+        final data = userDoc.data()!;
+        
+        return AppUser(
+          uid: credential.user!.uid,
+          userId: userId,
+          email: email,
+          role: data['role'] ?? intendedRole,
+          profileData: data['profileData'],
+        );
       }
-      
-      final data = userDoc.data()!;
+
+      debugPrint('⚠️ User document not found, creating basic user');
+      // Fallback: create basic user
       return AppUser(
         uid: credential.user!.uid,
+        userId: userId,
         email: email,
-        role: data['role'] ?? 'Member',
-        profileData: data['profileData'],
+        role: intendedRole,
       );
+    } on FirebaseAuthException catch (e) {
+      debugPrint('❌ Firebase Auth Error: ${e.code} - ${e.message}');
+      rethrow;
     } catch (e) {
-      // If Firebase fails or user not found, fallback to mock login for testing
-      // but only if it's a specific error (like user-not-found)
-      debugPrint('Firebase Login Error: $e. Falling back to mock logic.');
-      await Future.delayed(const Duration(seconds: 1));
-      
-      // Use 'c001' for Advisors to match the seeder data (Sara Ahmed etc.)
-      final uid = intendedRole == 'Advisor' ? 'c001' : 'p001';
-      return AppUser(uid: uid, email: email, role: intendedRole);
+      debugPrint('❌ Login Error: $e');
+      rethrow;
     }
   }
 
+  /// Sign up new user
   Future<AppUser> signUp({
     required String email,
     required String password,
@@ -63,34 +105,51 @@ class MockAuthService {
     required Map<String, dynamic> profileData,
   }) async {
     try {
-      final credential = await _auth.createUserWithEmailAndPassword(email: email, password: password);
+      debugPrint('📝 Attempting signup for: $email');
       
+      final credential = await _auth.createUserWithEmailAndPassword(
+        email: email.trim(),
+        password: password,
+      );
+
+      final userId = _getUserIdForEmail(email, role);
+
+      debugPrint('✅ Firebase account created with uid: ${credential.user!.uid}');
+
+      // Save to Firestore
       await _db.collection('users').doc(credential.user!.uid).set({
         'email': email,
         'role': role,
+        'userId': userId,
         'profileData': profileData,
         'createdAt': FieldValue.serverTimestamp(),
       });
 
+      debugPrint('✅ Firestore document created for userId: $userId');
+
       return AppUser(
         uid: credential.user!.uid,
+        userId: userId,
         email: email,
         role: role,
         profileData: profileData,
       );
+    } on FirebaseAuthException catch (e) {
+      debugPrint('❌ Firebase Auth Error: ${e.code} - ${e.message}');
+      rethrow;
     } catch (e) {
-      debugPrint('Firebase Signup Error: $e. Falling back to mock logic.');
-      await Future.delayed(const Duration(seconds: 1));
-      return AppUser(
-        uid: DateTime.now().millisecondsSinceEpoch.toString(),
-        email: email,
-        role: role,
-        profileData: profileData,
-      );
+      debugPrint('❌ Signup Error: $e');
+      rethrow;
     }
   }
 
+  /// Logout
   Future<void> logout() async {
     await _auth.signOut();
+  }
+
+  /// Get current Firebase user
+  User? getCurrentFirebaseUser() {
+    return _auth.currentUser;
   }
 }

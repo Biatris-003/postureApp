@@ -4,7 +4,7 @@ import '../../../data/datasources/auth_service_mock.dart';
 import 'signup_screen.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
-  final String initialRole; // 'Member' or 'Advisor'
+  final String initialRole;
 
   const LoginScreen({super.key, required this.initialRole});
 
@@ -17,27 +17,49 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
+  String? _errorMessage;
 
   void _login() async {
     if (!_formKey.currentState!.validate()) return;
 
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
     try {
       final user = await ref.read(authServiceProvider).login(
-        _emailController.text, 
+        _emailController.text.trim(),
         _passwordController.text,
         widget.initialRole,
       );
+      
       ref.read(authStateProvider.notifier).setUser(user);
+      
       if (!mounted) return;
-      // Go back to WelcomeScreen, which will then be replaced by the Dashboard in main.dart
-      Navigator.of(context).pop(); 
+      Navigator.of(context).pop();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      setState(() {
+        _errorMessage = _parseErrorMessage(e.toString());
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $_errorMessage')),
+      );
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  String _parseErrorMessage(String error) {
+    if (error.contains('user-not-found')) {
+      return 'Email not found. Please check or sign up.';
+    } else if (error.contains('wrong-password')) {
+      return 'Incorrect password.';
+    } else if (error.contains('invalid-email')) {
+      return 'Invalid email format.';
+    }
+    return 'Login failed. Try again.';
   }
 
   @override
@@ -171,11 +193,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   ],
                 ),
                 const SizedBox(height: 48),
-                Text(
-                  'Hint: Use "advisor@test.com" for Advisor role, any other for Member.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 11, color: Colors.grey.shade400, fontStyle: FontStyle.italic),
-                )
               ],
             ),
           ),
@@ -214,5 +231,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         fillColor: Colors.grey.shade50,
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
   }
 }
