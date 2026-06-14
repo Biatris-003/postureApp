@@ -417,3 +417,4 @@ class FirebaseSeeder {
   static double _randomAccel() => (_random.nextDouble() * 2) - 1;
   static double _randomGyro() => (_random.nextDouble() * 4) - 2;
 }
+
