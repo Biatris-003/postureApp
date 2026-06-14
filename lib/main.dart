@@ -60,44 +60,11 @@ class SmartPostureApp extends ConsumerWidget {
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: ThemeMode.system,
-      home: initializationError != null && !isBypassed
-          ? Scaffold(
-              body: Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24.0),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.error_outline, color: Colors.red, size: 64),
-                      const SizedBox(height: 16),
-                      const Text('Startup Error', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 8),
-                      Text(initializationError!),
-                      const SizedBox(height: 24),
-                      const Text('The app will continue with mock data if you proceed.', textAlign: TextAlign.center),
-                      const SizedBox(height: 32),
-                      ElevatedButton(
-                        onPressed: () {
-                          ref.read(bypassErrorProvider.notifier).bypass();
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1565C0),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        child: const Text('Continue to App (Mock Mode)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            )
-          : (authState == null
-              ? const WelcomeScreen()
-              : (authState.role == 'Advisor'
-                  ? const AdvisorDashboardScreen()
-                  : const MemberDashboardScreen())),
+      home: authState == null
+          ? const WelcomeScreen()
+          : (authState.role == 'Advisor'
+              ? const AdvisorDashboardScreen()
+              : const MemberDashboardScreen()),
     );
   }
 }

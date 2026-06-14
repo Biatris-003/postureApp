@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/datasources/auth_service_mock.dart';
 import 'home_tab.dart';
+import 'monitoring_tab.dart';
 import 'assistant_tab.dart';
 import 'statistics_tab.dart';
 import 'exercises_tab.dart';
@@ -20,6 +21,7 @@ class _MemberDashboardScreenState extends ConsumerState<MemberDashboardScreen> {
 
   final List<Widget> _tabs = [
     const HomeTab(),
+    const MonitoringTab(),
     const AssistantTab(),
     const StatisticsTab(),
     const ExercisesTab(),
@@ -72,6 +74,11 @@ class _MemberDashboardScreenState extends ConsumerState<MemberDashboardScreen> {
             icon: Icon(Icons.home_outlined),
             selectedIcon: Icon(Icons.home),
             label: 'Home',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.sensors_outlined),
+            selectedIcon: Icon(Icons.sensors),
+            label: 'Monitor',
           ),
           NavigationDestination(
             icon: Icon(Icons.chat_bubble_outline),
