@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Exercise Coach</title>
+  <link rel="stylesheet" href="static/style.css" />
+</head>
+<body>
+
+  <!-- SCREEN 1: Exercise Selection -->
+  <div id="screen-select" class="screen active">
+    <div class="header">
+      <h1>Exercise Coach</h1>
+      <p>AI-powered real-time posture correction</p>
+    </div>
+    <div class="exercise-grid" id="exercise-grid"></div>
+  </div>
+
+  <!-- SCREEN 2: Coaching View -->
+  <div id="screen-coach" class="screen">
+    <div class="top-bar">
+      <button class="btn-back" onclick="goBack()">← Back</button>
+      <div>
+        <div class="ex-title" id="coach-title"></div>
+        <div class="ex-subtitle" id="coach-subtitle"></div>
+      </div>
+    </div>
+
+    <div class="coach-layout">
+      <!-- Left: Video -->
+      <div class="video-wrap">
+        <video id="video" playsinline autoplay muted></video>
+        <canvas id="overlay"></canvas>
+        <div class="no-pose" id="no-pose">
+          <span class="icon">🧍</span>
+          <span>Stand in frame to begin</span>
+        </div>
+        <div class="status-bar">
+          <div class="status-dot neutral" id="status-dot"></div>
+          <div class="status-text" id="status-text">Waiting for pose...</div>
+        </div>
+      </div>
+
+      <!-- Right: Panel -->
+      <div class="panel">
+        <div class="info-card rep-card">
+          <div class="card-label">REPS</div>
+          <div class="rep-display" id="rep-count">0</div>
+          <div id="phase-label"><span class="phase-badge start">Get into position</span></div>
+        </div>
+
+        <div class="info-card">
+          <div class="card-label">JOINT ANGLES</div>
+          <div id="angles-display"></div>
+        </div>
+
+        <div class="info-card">
+          <div class="card-label">RULA SCORE</div>
+
+          <div id="rula-score" class="rula-score">
+            1
+          </div>
+
+          <div id="rula-risk" class="rula-risk">
+            Acceptable
+          </div>
+
+          <div id="rula-timer" class="rula-timer">
+            Monitoring...
+          </div>
+        </div>
+
+        <div class="info-card">
+          <div class="card-label">COACHING</div>
+          <ul class="feedback-list" id="feedback-list">
+            <li class="fb-neutral">ℹ️ Start the exercise to get feedback</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN 3: RULA Assessment -->
+  <div id="screen-rula" class="screen">
+    <div class="top-bar">
+      <button class="btn-back" onclick="goBack()">← Back</button>
+      <div>
+        <div class="ex-title">RULA Posture Assessment</div>
+        <div class="ex-subtitle">Track good posture reps (10s each) with 5s breaks</div>
+      </div>
+    </div>
+
+    <div class="coach-layout">
+      <!-- Left: Video -->
+      <div class="video-wrap">
+        <video id="video-rula" playsinline autoplay muted></video>
+        <canvas id="overlay-rula"></canvas>
+        <div class="no-pose" id="no-pose-rula">
+          <span class="icon">🧍</span>
+          <span>Sit naturally in frame to begin</span>
+        </div>
+        <div class="status-bar">
+          <div class="status-dot neutral" id="status-dot-rula"></div>
+          <div class="status-text" id="status-text-rula">Waiting for pose...</div>
+        </div>
+      </div>
+
+      <!-- Right: Panel -->
+      <div class="panel">
+        <!-- Reps Counter -->
+        <div class="info-card rep-card">
+          <div class="card-label">GOOD POSTURE REPS</div>
+          <div class="rep-display" id="rula-reps-count">0</div>
+          <div id="rula-phase-label"><span class="phase-badge start">Maintain posture</span></div>
+        </div>
+
+        <!-- Timing Display -->
+        <div class="info-card">
+          <div class="card-label">POSTURE TIMER</div>
+          <div id="rula-posture-timer" class="timer-display">
+            <div class="timer-value">0s</div>
+            <div class="timer-label">/ 10s Good Posture</div>
+          </div>
+        </div>
+
+        <!-- RULA Score -->
+        <div class="info-card">
+          <div class="card-label">RULA SCORE</div>
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div class="rula-score-large" id="rula-current-score">1</div>
+            <div id="rula-quality" class="rula-quality-badge">EXCELLENT</div>
+          </div>
+        </div>
+
+        <!-- Feedback -->
+        <div class="info-card">
+          <div class="card-label">POSTURE FEEDBACK</div>
+          <ul class="feedback-list" id="rula-feedback-list">
+            <li class="fb-neutral">ℹ️ Sit naturally and maintain good posture</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="static/exercises.js"></script>
+  <script src="static/rula-assessment.js"></script>
+  <script src="static/coach.js"></script>
+</body>
+</html>

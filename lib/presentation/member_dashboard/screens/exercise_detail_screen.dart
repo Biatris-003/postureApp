@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:smart_posture_app/presentation/member_dashboard/screens/exercise_coach_screen.dart';
 import 'package:video_player/video_player.dart';
 import '../../../domain/entities/exercises/exercise.dart';
 
@@ -212,16 +213,15 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: const Text('Exercise tracking started!'),
-                            behavior: SnackBarBehavior.floating,
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16)),
-                          ),
-                        );
-                      },
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (context) => ExerciseCoachScreen(
+                                exerciseTitle: widget.exercise.title,
+                              ),
+                            ),
+                          );
+                        },
                       style:
                           Theme.of(context).elevatedButtonTheme.style?.copyWith(
                                 padding: WidgetStateProperty.all(
