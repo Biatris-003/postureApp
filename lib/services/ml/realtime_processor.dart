@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import '../ble/ble_receiver.dart';
 import '../ble/sensor_frame.dart';
@@ -90,6 +91,7 @@ class RealtimeProcessor {
     _inferring = false;
   }
 
+
   void dispose() {
     stop();
     _predController.close();
@@ -131,6 +133,19 @@ class RealtimeProcessor {
 
     _syncedSinceLastInfer++;
 
+    // Print 1: every 25 syncs, compare L5 raw quat vs sensor's own AHRS angles.
+    if (_buffer.length % 25 == 1) {
+      // ignore: avoid_print
+      print('[DBG-RAW] L5 '
+          'quat=[${merged['L5_Quaternions 0()']?.toStringAsFixed(3)},'
+          '${merged['L5_Quaternions 1()']?.toStringAsFixed(3)},'
+          '${merged['L5_Quaternions 2()']?.toStringAsFixed(3)},'
+          '${merged['L5_Quaternions 3()']?.toStringAsFixed(3)}] '
+          'AHRS: roll=${merged['L5_Angle X(°)']?.toStringAsFixed(1)}° '
+          'pitch=${merged['L5_Angle Y(°)']?.toStringAsFixed(1)}° '
+          'yaw=${merged['L5_Angle Z(°)']?.toStringAsFixed(1)}°');
+    }
+
     if (_syncedSinceLastInfer >= _triggerEvery && !_inferring) {
       _syncedSinceLastInfer = 0;
       _maybeInfer();
@@ -155,6 +170,23 @@ class RealtimeProcessor {
 
     try {
       var window = Preprocessing.preprocessWindow(snapshot, _winLen);
+
+      // Print 2: quaternion-derived Euler vs sensor's own AHRS angles for L5 (last row).
+      if (_buffer.isNotEmpty) {
+        const r2d = 180.0 / pi;
+        final lastWin = window[window.length - 1];
+        final lastBuf = _buffer.last;
+        // ignore: avoid_print
+        print('[DBG-EULER] L5 quat→euler: '
+            'yaw=${(lastWin[3] * r2d).toStringAsFixed(1)}° '
+            'pitch=${(lastWin[4] * r2d).toStringAsFixed(1)}° '
+            'roll=${(lastWin[5] * r2d).toStringAsFixed(1)}° | '
+            'sensor AHRS: '
+            'yaw=${lastBuf['L5_Angle Z(°)']?.toStringAsFixed(1)}° '
+            'pitch=${lastBuf['L5_Angle Y(°)']?.toStringAsFixed(1)}° '
+            'roll=${lastBuf['L5_Angle X(°)']?.toStringAsFixed(1)}°');
+      }
+
       // ignore: avoid_print
       print('[DBG] preNorm[0]: ${window[0].map((v) => v.toStringAsFixed(3)).toList()}');
 

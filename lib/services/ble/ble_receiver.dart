@@ -43,6 +43,7 @@ class BleReceiver {
     if (_running) return;
     _running = true;
 
+    FlutterBluePlus.setLogLevel(LogLevel.none, color: false);
     await _requestPermissions();
 
     // Stagger connection attempts to avoid overwhelming Android's GATT stack.
