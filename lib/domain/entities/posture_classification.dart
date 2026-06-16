@@ -28,9 +28,21 @@ class PostureClassification {
       modelId: map['modelId'] ?? '',
       postureLabel: map['postureLabel'] ?? '',
       confidenceScore: (map['confidenceScore'] ?? map['confidence'] ?? 0.0).toDouble(),
-      timestamp: (map['timestamp'] as Timestamp).toDate(), 
+      timestamp: _parseTimestamp(map['timestamp']),
       patientId: map['patientId'] ?? '',
       sessionId: map['sessionId'] ?? '',
     );
   }
+  static DateTime _parseTimestamp(dynamic value) {
+  if (value is Timestamp) {
+    return value.toDate();
+  }
+  if (value is String) {
+    return DateTime.parse(value);
+  }
+  if (value is int) {
+    return DateTime.fromMillisecondsSinceEpoch(value);
+  }
+  return DateTime.now(); // fallback (prevents crash)
+}
 }

@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:math';
 
 class FirebaseSeeder {
@@ -72,14 +73,28 @@ class FirebaseSeeder {
 
   // Entity 4 - Session
   static Future<void> _seedSession() async {
-    await _db.collection('sessions').doc('s001').set({
+    await _db.collection('sessionResults').doc('s001').set({
       'sessionId': 's001',
       'patientId': 'p001',
       'deviceId': 'd001',
-      'startTimestamp':
-          DateTime.now().subtract(const Duration(hours: 2)).toIso8601String(),
-      'endTimestamp': DateTime.now().toIso8601String(),
-      'activityContext': 'sitting',
+      'startTimestamp': Timestamp.fromDate(DateTime.now().subtract(const Duration(hours: 2))),
+      'endTimestamp': Timestamp.fromDate(DateTime.now()),
+      'durationMinutes': 120,
+      'sessionScore': 68,
+      'totalReadings': 60,
+      'mostProblematicPosture': 'forward_bending',
+      'uprightMinutes': 82,
+      'alertCount': 2,
+      'status': 'completed',
+      'posturePercentages': {
+        'upright': 68.0, 'forward_bending': 15.0, 'backward_bending': 5.0,
+        'slouching': 8.0, 'left_bending': 2.0, 'right_bending': 2.0,
+      },
+      'avgLumbarLordosis': 32.4,
+      'avgThoracicKyphosis': 38.1,
+      'avgCervicalLordosis': 22.7,
+      'maxLateralDeviation': 6.3,
+      'createdAt': FieldValue.serverTimestamp(),
     });
     print('✅ Session created');
   }
@@ -283,13 +298,24 @@ class FirebaseSeeder {
         final sessionEnd = sessionStart.add(const Duration(hours: 2));
 
         // Create session
-        await _db.collection('sessions').doc(sessionId).set({
+        await _db.collection('sessionResults').doc(sessionId).set({
           'sessionId': sessionId,
           'patientId': 'p001',
           'deviceId': 'd001',
-          'startTimestamp': sessionStart.toIso8601String(),
-          'endTimestamp': sessionEnd.toIso8601String(),
-          'activityContext': sessionNum == 0 ? 'morning_work' : 'afternoon_work',
+          'startTimestamp': Timestamp.fromDate(sessionStart),
+          'endTimestamp': Timestamp.fromDate(sessionEnd),
+          'durationMinutes': 120,
+          'sessionScore': 50 + _random.nextInt(40),
+          'totalReadings': 30,
+          'mostProblematicPosture': 'slouching',
+          'uprightMinutes': 48 + _random.nextInt(30),
+          'alertCount': _random.nextInt(5),
+          'status': 'completed',
+          'posturePercentages': {
+            'upright': 55.0, 'forward_bending': 18.0, 'backward_bending': 6.0,
+            'slouching': 12.0, 'left_bending': 5.0, 'right_bending': 4.0,
+          },
+          'createdAt': FieldValue.serverTimestamp(),
         });
 
         // Create 30 readings + classifications per session
@@ -413,6 +439,106 @@ class FirebaseSeeder {
 
     print('✅ Notifications seeded successfully');
   }
+  /// Seeds 50 sessionResults rows.
+  /// Pass [patientId] to seed for a specific user; omit to use the current user.
+  static Future<void> seedSessionResults({String? patientId}) async {
+    final pid = patientId ?? FirebaseAuth.instance.currentUser?.uid;
+    if (pid == null) {
+      print('❌ No user logged in and no patientId provided.');
+      return;
+    }
+    const deviceId = 'd001';
+    print('🌱 Seeding 50 sessionResults for $pid …');
+
+    const postureKeys = [
+      'upright', 'forward_bending', 'backward_bending',
+      'slouching', 'left_bending', 'right_bending',
+    ];
+
+    for (int i = 0; i < 50; i++) {
+      // Spread across 25 days, ~2 sessions per day (morning + afternoon).
+      final daysAgo  = i ~/ 2;
+      final isMorning = i.isEven;
+      final start = DateTime.now()
+          .subtract(Duration(days: daysAgo))
+          .copyWith(
+            hour:   isMorning ? 8  + _random.nextInt(3) : 13 + _random.nextInt(4),
+            minute: _random.nextInt(60),
+            second: 0,
+            millisecond: 0,
+          );
+      final durationMins = 30 + _random.nextInt(151); // 30–180 min
+      final end = start.add(Duration(minutes: durationMins));
+
+      // ── Posture percentages (sum = 100) ─────────────────────────────────
+      double up   = 30 + _random.nextDouble() * 45;  // 30–75 %
+      double fwd  =  5 + _random.nextDouble() * 20;
+      double bwd  =  2 + _random.nextDouble() *  8;
+      double slch =  5 + _random.nextDouble() * 15;
+      double lft  =  1 + _random.nextDouble() *  7;
+      double rgt  =  1 + _random.nextDouble() *  7;
+      final tot   = up + fwd + bwd + slch + lft + rgt;
+      up   = double.parse((up   / tot * 100).toStringAsFixed(1));
+      fwd  = double.parse((fwd  / tot * 100).toStringAsFixed(1));
+      bwd  = double.parse((bwd  / tot * 100).toStringAsFixed(1));
+      slch = double.parse((slch / tot * 100).toStringAsFixed(1));
+      lft  = double.parse((lft  / tot * 100).toStringAsFixed(1));
+      // absorb rounding remainder into right_bending
+      rgt  = double.parse(
+          (100 - up - fwd - bwd - slch - lft).toStringAsFixed(1));
+
+      // ── Most problematic (highest non-upright class) ─────────────────────
+      final nonUpright = {
+        'forward_bending': fwd, 'backward_bending': bwd,
+        'slouching': slch,      'left_bending': lft, 'right_bending': rgt,
+      };
+      final mostProblematic = nonUpright.entries
+          .reduce((a, b) => a.value > b.value ? a : b)
+          .key;
+
+      final sessionScore  = up.round().clamp(0, 100);
+      final totalReadings = (durationMins / 2).round();
+      final uprightMins   = (up / 100 * durationMins).round();
+      final alertCount    = _random.nextInt(9);          // 0–8
+      final status        = _random.nextDouble() > 0.08 ? 'completed' : 'interrupted';
+
+      final sessionId = 'sr_${i.toString().padLeft(3, '0')}';
+
+      await _db.collection('sessionResults').doc('${pid}_$sessionId').set({
+        'sessionId':            '${pid}_$sessionId',
+        'patientId':            pid,
+        'deviceId':             deviceId,
+        'startTimestamp':       Timestamp.fromDate(start),
+        'endTimestamp':         Timestamp.fromDate(end),
+        'durationMinutes':      durationMins,
+        'sessionScore':         sessionScore,
+        'totalReadings':        totalReadings,
+        'mostProblematicPosture': mostProblematic,
+        'uprightMinutes':       uprightMins,
+        'alertCount':           alertCount,
+        'status':               status,
+        'posturePercentages': {
+          'upright':           up,
+          'forward_bending':   fwd,
+          'backward_bending':  bwd,
+          'slouching':         slch,
+          'left_bending':      lft,
+          'right_bending':     rgt,
+        },
+        // Optional clinical angles — omit or set null to remove in future.
+        'avgLumbarLordosis':    double.parse((15 + _random.nextDouble() * 40).toStringAsFixed(1)),
+        'avgThoracicKyphosis':  double.parse((20 + _random.nextDouble() * 35).toStringAsFixed(1)),
+        'avgCervicalLordosis':  double.parse((10 + _random.nextDouble() * 30).toStringAsFixed(1)),
+        'maxLateralDeviation':  double.parse((_random.nextDouble() * 20).toStringAsFixed(1)),
+        'createdAt':            FieldValue.serverTimestamp(),
+      });
+
+      print('  [$i] $sessionId — score: $sessionScore  duration: ${durationMins}min  status: $status');
+    }
+
+    print('✅ 50 sessionResults seeded for patientId: $pid');
+  }
+
   static double _randomAngle() => (_random.nextDouble() * 30) - 15;
   static double _randomAccel() => (_random.nextDouble() * 2) - 1;
   static double _randomGyro() => (_random.nextDouble() * 4) - 2;

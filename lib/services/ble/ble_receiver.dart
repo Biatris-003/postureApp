@@ -45,9 +45,15 @@ class BleReceiver {
 
     await _requestPermissions();
 
+    // Stagger connection attempts to avoid overwhelming Android's GATT stack.
+    // Simultaneous connects all fail with error 133 (GATT_ERROR).
+    int i = 0;
     for (final mac in kSensorIdMap.keys) {
       _states[mac] = DeviceState();
-      _connectDevice(mac);
+      Future<void>.delayed(Duration(milliseconds: i * 600), () {
+        if (_running) _connectDevice(mac);
+      });
+      i++;
     }
   }
 

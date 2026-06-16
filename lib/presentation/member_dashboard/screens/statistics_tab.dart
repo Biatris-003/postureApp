@@ -98,42 +98,62 @@ class _StatisticsTabState extends ConsumerState<StatisticsTab> {
 
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
-    // const userId = 'test_patient_001'; // hardcoded until auth is connected
-    // final service = ref.read(analyticsServiceProvider);
 
-    // ✨ FIXED: Use the actual logged-in user instead of hardcoded ID
     final user = ref.read(authStateProvider);
-    final userId = user?.userId ?? 'unknown';
-    print('👤 Current User: ${user?.uid} | ${user?.email} | ${user?.userId}');
-    
+    final firebaseUid = user?.userId;
+
     final service = ref.read(analyticsServiceProvider);
+
     try {
-      List<PostureClassification> data;
-      if (_selectedTimeRange == 0) {
-        data = await service.getClassificationsByDays(userId, 1);
-      } else if (_selectedTimeRange == 1) {
-        data = await service.getClassificationsByDays(userId, 7);
-      } else {
-        data = await service.getClassificationsByDays(userId, 30);
+      if (firebaseUid == null) {
+        throw Exception("User not logged in");
       }
 
-    print('📊 Data retrieved: ${data.length} readings for user $userId');
-    
-      // ✨ Store in global cache
-    final counts = service.calculatePostureCounts(data);
-    postureCountsCache = counts;
-    print('📈 Posture counts: $postureCountsCache');
+      // 🔥 STEP 1: FIND patientId FROM patients TABLE
+      final patientSnapshot = await FirebaseFirestore.instance
+          .collection('patients')
+          .where('userId', isEqualTo: firebaseUid)
+          .limit(1)
+          .get();
+
+      if (patientSnapshot.docs.isEmpty) {
+        throw Exception("Patient record not found for this user");
+      }
+
+      final patientDoc = patientSnapshot.docs.first;
+      final patientId = patientDoc['patientId'];
+
+      print('🧠 firebaseUid = $firebaseUid');
+      print('🧠 resolved patientId = $patientId');
+
+      // 🔥 STEP 2: USE patientId (NOT firebase UID)
+      List<PostureClassification> data;
+
+      if (_selectedTimeRange == 0) {
+        data = await service.getClassificationsByDays(patientId, 1);
+      } else if (_selectedTimeRange == 1) {
+        data = await service.getClassificationsByDays(patientId, 7);
+      } else {
+        data = await service.getClassificationsByDays(patientId, 30);
+      }
+
+      print('📊 Data retrieved: ${data.length} readings for patient $patientId');
+
+      final counts = service.calculatePostureCounts(data);
+      postureCountsCache = counts;
+
       setState(() {
         _data = data;
         _isLoading = false;
       });
 
       if (_selectedTimeRange == 0 && data.isNotEmpty) {
-        await service.saveDailyStatistics(userId, data);
-        print('✅ Daily statistics updated for today');
+        await service.saveDailyStatistics(patientId, data);
+        print('✅ Daily statistics saved for $patientId');
       }
+
     } catch (e) {
-      print('❌ loadData error: $e'); // check your debug console
+      print('❌ loadData error: $e');
       setState(() {
         _data = [];
         _isLoading = false;

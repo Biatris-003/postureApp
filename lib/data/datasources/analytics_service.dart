@@ -252,11 +252,12 @@ class AnalyticsService {
 
   // Total wearing time in minutes for a session
   Future<int> getSessionDurationMinutes(String sessionId) async {
-    final doc = await _db.collection('sessions').doc(sessionId).get();
+    final doc = await _db.collection('sessionResults').doc(sessionId).get();
     if (!doc.exists) return 0;
     final data = doc.data()!;
-    final start = DateTime.parse(data['startTimestamp']);
-    final end = DateTime.parse(data['endTimestamp']);
+    if (data.containsKey('durationMinutes')) return data['durationMinutes'] as int;
+    final start = (data['startTimestamp'] as Timestamp).toDate();
+    final end   = (data['endTimestamp']   as Timestamp).toDate();
     return end.difference(start).inMinutes;
   }
 

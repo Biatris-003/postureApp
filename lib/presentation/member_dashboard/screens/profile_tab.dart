@@ -1,13 +1,93 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../data/datasources/auth_service_mock.dart';
 
-class ProfileTab extends ConsumerWidget {
+class ProfileTab extends ConsumerStatefulWidget {
   const ProfileTab({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(authStateProvider);
+  ConsumerState<ProfileTab> createState() => _ProfileTabState();
+}
+
+class _ProfileTabState extends ConsumerState<ProfileTab> {
+  Map<String, dynamic>? _patientData;
+  String? _patientId;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolvePatientAndLoad();
+  }
+
+  // ── Step 1: find the patient doc that belongs to the logged-in user ──
+  Future<void> _resolvePatientAndLoad() async {
+    try {
+      final appUser = ref.read(authStateProvider); // AppUser?
+      if (appUser == null) {
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      final query = await FirebaseFirestore.instance
+          .collection('patients')
+          .where('userId', isEqualTo: appUser.userId)
+          .limit(1)
+          .get();
+
+      if (query.docs.isEmpty) {
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      _patientId = query.docs.first.id;
+      await _loadPatientData();
+    } catch (e) {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  // ── Step 2: load the full patient document ────────────────────────────
+  Future<void> _loadPatientData() async {
+    if (_patientId == null) return;
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('patients')
+          .doc(_patientId!)
+          .get();
+      setState(() {
+        _patientData = doc.data();
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+
+    if (_patientId == null) {
+      return const Scaffold(
+        body: Center(
+          child: Text(
+            'Could not load profile.\nPlease log in again.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey),
+          ),
+        ),
+      );
+    }
+
+    // ── Read real data from patients table ──
+    final name = _patientData?['fullName'] ?? 'Unknown';
+    final email = _patientData?['contactEmail'] ?? '';
+    final gender = _patientData?['gender'] ?? '';
+    final dob = _patientData?['dateOfBirth'] ?? '';
+    final language = _patientData?['preferredLanguage'] ?? '';
+    final initials = name.split(' ').map((e) => e[0]).take(2).join();
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -20,7 +100,10 @@ class ProfileTab extends ConsumerWidget {
               background: Container(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [Theme.of(context).primaryColor, Theme.of(context).colorScheme.secondary],
+                    colors: [
+                      Theme.of(context).primaryColor,
+                      Theme.of(context).colorScheme.secondary
+                    ],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
@@ -29,20 +112,29 @@ class ProfileTab extends ConsumerWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     const SizedBox(height: 40),
+                    // ── Avatar with initials (no hardcoded asset) ──
                     Container(
                       padding: const EdgeInsets.all(4),
                       decoration: const BoxDecoration(
                         color: Colors.white,
                         shape: BoxShape.circle,
                       ),
-                      child: const CircleAvatar(
+                      child: CircleAvatar(
                         radius: 55,
-                        backgroundImage: AssetImage('assets/images/user_profile.jpg'),
+                        backgroundColor: Theme.of(context).primaryColor.withOpacity(0.2),
+                        child: Text(
+                          initials,
+                          style: TextStyle(
+                            fontSize: 32,
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(context).primaryColor,
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      user?.email ?? 'Sarah Connor',
+                      name,
                       style: const TextStyle(
                         fontSize: 26,
                         fontWeight: FontWeight.bold,
@@ -54,7 +146,7 @@ class ProfileTab extends ConsumerWidget {
                       'Premium Member',
                       style: TextStyle(
                         fontSize: 16,
-                        color: Colors.white.withValues(alpha: 0.9),
+                        color: Colors.white.withOpacity(0.9),
                         letterSpacing: 1.2,
                         fontWeight: FontWeight.w600,
                       ),
@@ -72,17 +164,91 @@ class ProfileTab extends ConsumerWidget {
                 children: [
                   _buildDailyGoalCard(context),
                   const SizedBox(height: 32),
-                  Text('Hardware Connections', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onSurface)),
+                  Text('Personal Information',
+                      style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).colorScheme.onSurface)),
+                  const SizedBox(height: 16),
+                  _buildInfoCard(context, email, gender, dob, language),
+                  const SizedBox(height: 32),
+                  Text('Hardware Connections',
+                      style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).colorScheme.onSurface)),
                   const SizedBox(height: 16),
                   _buildHardwareCard(context),
                   const SizedBox(height: 32),
-                  Text('Account Settings', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onSurface)),
+                  Text('Account Settings',
+                      style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).colorScheme.onSurface)),
                   const SizedBox(height: 16),
                   _buildSettingsGroup(context, ref),
                   const SizedBox(height: 40),
                 ],
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Personal Info Card ────────────────────────────────────
+  Widget _buildInfoCard(BuildContext context, String email, String gender,
+      String dob, String language) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+              color: Theme.of(context).shadowColor.withOpacity(0.05),
+              blurRadius: 15,
+              offset: const Offset(0, 5)),
+        ],
+      ),
+      child: Column(
+        children: [
+          _buildInfoRow(context, Icons.email_outlined, 'Email', email),
+          const Divider(height: 1),
+          _buildInfoRow(context, Icons.wc_outlined, 'Gender', gender),
+          const Divider(height: 1),
+          _buildInfoRow(context, Icons.cake_outlined, 'Date of Birth', dob),
+          const Divider(height: 1),
+          _buildInfoRow(context, Icons.language_outlined, 'Language', language),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(
+      BuildContext context, IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: Theme.of(context).primaryColor),
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label,
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withOpacity(0.5))),
+              const SizedBox(height: 2),
+              Text(value,
+                  style: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w500)),
+            ],
           ),
         ],
       ),
@@ -96,7 +262,10 @@ class ProfileTab extends ConsumerWidget {
         color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
-          BoxShadow(color: Theme.of(context).shadowColor.withValues(alpha: 0.05), blurRadius: 15, offset: const Offset(0, 5)),
+          BoxShadow(
+              color: Theme.of(context).shadowColor.withOpacity(0.05),
+              blurRadius: 15,
+              offset: const Offset(0, 5)),
         ],
       ),
       child: Column(
@@ -105,8 +274,13 @@ class ProfileTab extends ConsumerWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Daily Goal', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.onSurface)),
-              Icon(Icons.local_fire_department_rounded, color: const Color(0xFFF59E0B), size: 32),
+              Text('Daily Goal',
+                  style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.onSurface)),
+              const Icon(Icons.local_fire_department_rounded,
+                  color: Color(0xFFF59E0B), size: 32),
             ],
           ),
           const SizedBox(height: 16),
@@ -116,8 +290,18 @@ class ProfileTab extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('80%', style: TextStyle(fontSize: 36, fontWeight: FontWeight.w800, color: Theme.of(context).primaryColor)),
-                    Text('Posture Score', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5), fontWeight: FontWeight.w600)),
+                    Text('80%',
+                        style: TextStyle(
+                            fontSize: 36,
+                            fontWeight: FontWeight.w800,
+                            color: Theme.of(context).primaryColor)),
+                    Text('Posture Score',
+                        style: TextStyle(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurface
+                                .withOpacity(0.5),
+                            fontWeight: FontWeight.w600)),
                   ],
                 ),
               ),
@@ -128,8 +312,10 @@ class ProfileTab extends ConsumerWidget {
                   child: LinearProgressIndicator(
                     value: 0.8,
                     minHeight: 14,
-                    backgroundColor: Theme.of(context).primaryColor.withValues(alpha: 0.15),
-                    valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).primaryColor),
+                    backgroundColor:
+                        Theme.of(context).primaryColor.withOpacity(0.15),
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                        Theme.of(context).primaryColor),
                   ),
                 ),
               )
@@ -141,41 +327,62 @@ class ProfileTab extends ConsumerWidget {
   }
 
   Widget _buildHardwareCard(BuildContext context) {
-    final successColor = const Color(0xFF10B981);
-    
+    const successColor = Color(0xFF10B981);
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
-          BoxShadow(color: Theme.of(context).shadowColor.withValues(alpha: 0.05), blurRadius: 15, offset: const Offset(0, 5)),
+          BoxShadow(
+              color: Theme.of(context).shadowColor.withOpacity(0.05),
+              blurRadius: 15,
+              offset: const Offset(0, 5)),
         ],
-        border: Border.all(color: Theme.of(context).primaryColor.withValues(alpha: 0.1), width: 2),
+        border: Border.all(
+            color: Theme.of(context).primaryColor.withOpacity(0.1), width: 2),
       ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(color: successColor.withValues(alpha: 0.15), shape: BoxShape.circle),
-            child: Icon(Icons.bluetooth_connected_rounded, color: successColor, size: 28),
+            decoration: BoxDecoration(
+                color: successColor.withOpacity(0.15), shape: BoxShape.circle),
+            child: const Icon(Icons.bluetooth_connected_rounded,
+                color: successColor, size: 28),
           ),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Smart Shirt Sensors', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Theme.of(context).colorScheme.onSurface)),
+                Text('Smart Shirt Sensors',
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: Theme.of(context).colorScheme.onSurface)),
                 const SizedBox(height: 4),
-                Text('Connected • Synced just now', style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5), fontWeight: FontWeight.w600)),
+                Text('Connected • Synced just now',
+                    style: TextStyle(
+                        fontSize: 13,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurface
+                            .withOpacity(0.5),
+                        fontWeight: FontWeight.w600)),
               ],
             ),
           ),
           Column(
             children: [
-              Icon(Icons.battery_4_bar_rounded, color: successColor, size: 24),
+              const Icon(Icons.battery_4_bar_rounded,
+                  color: successColor, size: 24),
               const SizedBox(height: 4),
-              Text('82%', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Theme.of(context).colorScheme.onSurface)),
+              Text('82%',
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: Theme.of(context).colorScheme.onSurface)),
             ],
           ),
         ],
@@ -189,21 +396,48 @@ class ProfileTab extends ConsumerWidget {
         color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
-          BoxShadow(color: Theme.of(context).shadowColor.withValues(alpha: 0.05), blurRadius: 15, offset: const Offset(0, 5)),
+          BoxShadow(
+              color: Theme.of(context).shadowColor.withOpacity(0.05),
+              blurRadius: 15,
+              offset: const Offset(0, 5)),
         ],
       ),
       child: Column(
         children: [
-          _buildSettingsTile(context, icon: Icons.notifications_active_outlined, title: 'Push Notifications', trailing: Switch(value: true, onChanged: (_) {}, activeThumbColor: Theme.of(context).primaryColor)),
-          Divider(height: 1, indent: 64, color: Theme.of(context).scaffoldBackgroundColor),
-          _buildSettingsTile(context, icon: Icons.person_outline, title: 'Personal Information', trailing: Icon(Icons.chevron_right_rounded, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3), size: 28)),
-          Divider(height: 1, indent: 64, color: Theme.of(context).scaffoldBackgroundColor),
-          _buildSettingsTile(context, icon: Icons.security_outlined, title: 'Privacy & Data', trailing: Icon(Icons.chevron_right_rounded, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3), size: 28)),
-          Divider(height: 1, indent: 64, color: Theme.of(context).scaffoldBackgroundColor),
+          _buildSettingsTile(context,
+              icon: Icons.notifications_active_outlined,
+              title: 'Push Notifications',
+              trailing: Switch(
+                  value: true,
+                  onChanged: (_) {},
+                  activeThumbColor: Theme.of(context).primaryColor)),
+          Divider(
+              height: 1,
+              indent: 64,
+              color: Theme.of(context).scaffoldBackgroundColor),
+          _buildSettingsTile(context,
+              icon: Icons.security_outlined,
+              title: 'Privacy & Data',
+              trailing: Icon(Icons.chevron_right_rounded,
+                  color: Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withOpacity(0.3),
+                  size: 28)),
+          Divider(
+              height: 1,
+              indent: 64,
+              color: Theme.of(context).scaffoldBackgroundColor),
           ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-            leading: const Icon(Icons.logout_rounded, color: Color(0xFFEF4444), size: 28),
-            title: const Text('Log Out', style: TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.bold, fontSize: 16)),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+            leading: const Icon(Icons.logout_rounded,
+                color: Color(0xFFEF4444), size: 28),
+            title: const Text('Log Out',
+                style: TextStyle(
+                    color: Color(0xFFEF4444),
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16)),
             onTap: () {
               ref.read(authServiceProvider).logout();
               ref.read(authStateProvider.notifier).setUser(null);
@@ -214,15 +448,25 @@ class ProfileTab extends ConsumerWidget {
     );
   }
 
-  Widget _buildSettingsTile(BuildContext context, {required IconData icon, required String title, required Widget trailing}) {
+  Widget _buildSettingsTile(BuildContext context,
+      {required IconData icon,
+      required String title,
+      required Widget trailing}) {
     return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      contentPadding:
+          const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
       leading: Container(
         padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(color: Theme.of(context).primaryColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
+        decoration: BoxDecoration(
+            color: Theme.of(context).primaryColor.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(10)),
         child: Icon(icon, color: Theme.of(context).primaryColor),
       ),
-      title: Text(title, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Theme.of(context).colorScheme.onSurface)),
+      title: Text(title,
+          style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+              color: Theme.of(context).colorScheme.onSurface)),
       trailing: trailing,
       onTap: () {},
     );

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../../data/datasources/auth_service_mock.dart';
 import 'assigned_members_tab.dart';
 import 'advisor_profile_tab.dart';
 import 'notifications_tab.dart';
@@ -18,8 +19,32 @@ class AdvisorDashboardScreen extends ConsumerStatefulWidget {
 class _AdvisorDashboardScreenState
     extends ConsumerState<AdvisorDashboardScreen> {
   int _currentIndex = 0;
+  String? _clinicianId; // ✅ resolved dynamically, no longer hardcoded
 
-  // ✅ FIX: dynamic tab builder instead of static list
+  @override
+  void initState() {
+    super.initState();
+    _resolveClinicianId();
+  }
+
+  // ── Resolve clinicianId from the logged-in user ──────────
+  Future<void> _resolveClinicianId() async {
+    final appUser = ref.read(authStateProvider); // AppUser?
+    if (appUser == null) return;
+
+    final query = await FirebaseFirestore.instance
+        .collection('clinicians')
+        .where('userId', isEqualTo: appUser.userId)
+        .limit(1)
+        .get();
+
+    if (query.docs.isEmpty) return;
+
+    setState(() {
+      _clinicianId = query.docs.first.id; // e.g. 'c001'
+    });
+  }
+
   Widget _getTab(int index) {
     switch (index) {
       case 0:
@@ -53,15 +78,13 @@ class _AdvisorDashboardScreenState
         ),
         child: SafeArea(
           child: Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
                 _buildNavItem(
                     0, Icons.people_outline, Icons.people, 'Patients'),
 
-                // ✅ FIX: live badge
                 _buildNavItemWithLiveBadge(
                   1,
                   Icons.notifications_outlined,
@@ -92,8 +115,7 @@ class _AdvisorDashboardScreenState
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding:
-            const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
         decoration: BoxDecoration(
           color: isSelected
               ? const Color(0xFF1565C0).withOpacity(0.1)
@@ -105,9 +127,8 @@ class _AdvisorDashboardScreenState
           children: [
             Icon(
               isSelected ? activeIcon : icon,
-              color: isSelected
-                  ? const Color(0xFF1565C0)
-                  : Colors.grey.shade400,
+              color:
+                  isSelected ? const Color(0xFF1565C0) : Colors.grey.shade400,
               size: 24,
             ),
             const SizedBox(height: 4),
@@ -134,10 +155,15 @@ class _AdvisorDashboardScreenState
       int index, IconData icon, IconData activeIcon, String label) {
     final isSelected = _currentIndex == index;
 
+    // ✅ If clinicianId not resolved yet, show badge with 0 (no crash)
+    if (_clinicianId == null) {
+      return _buildNavItem(index, icon, activeIcon, label);
+    }
+
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('notifications')
-          .where('clinicianId', isEqualTo: 'c001')
+          .where('clinicianId', isEqualTo: _clinicianId) // ✅ dynamic
           .where('isRead', isEqualTo: false)
           .snapshots(),
       builder: (context, snapshot) {
@@ -150,8 +176,8 @@ class _AdvisorDashboardScreenState
           },
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.symmetric(
-                horizontal: 20, vertical: 8),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
             decoration: BoxDecoration(
               color: isSelected
                   ? const Color(0xFF1565C0).withOpacity(0.1)
@@ -171,7 +197,6 @@ class _AdvisorDashboardScreenState
                           : Colors.grey.shade400,
                       size: 24,
                     ),
-
                     if (count > 0)
                       Positioned(
                         top: -4,
@@ -202,9 +227,8 @@ class _AdvisorDashboardScreenState
                   label,
                   style: TextStyle(
                     fontSize: 11,
-                    fontWeight: isSelected
-                        ? FontWeight.bold
-                        : FontWeight.normal,
+                    fontWeight:
+                        isSelected ? FontWeight.bold : FontWeight.normal,
                     color: isSelected
                         ? const Color(0xFF1565C0)
                         : Colors.grey.shade400,

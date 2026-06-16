@@ -5,7 +5,7 @@ import '../../../data/datasources/auth_service_mock.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:convert';
 
-const String currentClinicianId = 'c001';
+// ✅ REMOVED: const String currentClinicianId = 'c001';
 
 class AdvisorProfileTab extends ConsumerStatefulWidget {
   const AdvisorProfileTab({super.key});
@@ -16,44 +16,50 @@ class AdvisorProfileTab extends ConsumerStatefulWidget {
 
 class _AdvisorProfileTabState extends ConsumerState<AdvisorProfileTab> {
   Map<String, dynamic>? _clinicianData;
+  String? _clinicianId;         // ✅ resolved dynamically from logged-in user
   bool _isLoading = true;
   bool _notificationsEnabled = true;
 
   @override
   void initState() {
     super.initState();
-    _loadClinicianData();
+    _resolveClinicianAndLoad();  // ✅ replaces direct _loadClinicianData()
   }
 
-  Future<void> _pickAndSaveImage() async {
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(
-      source: ImageSource.gallery,
-      maxWidth: 400,
-      maxHeight: 400,
-      imageQuality: 70,
-    );
-    
-    if (picked == null) return;
+  // ── Step 1: find the clinician doc that belongs to the logged-in user ──
+  Future<void> _resolveClinicianAndLoad() async {
+    try {
+      final appUser = ref.read(authStateProvider); // AppUser?
+      if (appUser == null) {
+        setState(() => _isLoading = false);
+        return;
+      }
 
-    setState(() => _isLoading = true);
+      final query = await FirebaseFirestore.instance
+          .collection('clinicians')
+          .where('userId', isEqualTo: appUser.userId)
+          .limit(1)
+          .get();
 
-    final bytes = await picked.readAsBytes();
-    final base64Image = base64Encode(bytes);
+      if (query.docs.isEmpty) {
+        setState(() => _isLoading = false);
+        return;
+      }
 
-    await FirebaseFirestore.instance
-        .collection('clinicians')
-        .doc(currentClinicianId)
-        .update({'profileImageBase64': base64Image});
-
-    await _loadClinicianData();
+      _clinicianId = query.docs.first.id; // e.g. 'c001'
+      await _loadClinicianData();
+    } catch (e) {
+      setState(() => _isLoading = false);
+    }
   }
 
+  // ── Step 2: load the full clinician document ───────────────────────────
   Future<void> _loadClinicianData() async {
+    if (_clinicianId == null) return;
     try {
       final doc = await FirebaseFirestore.instance
           .collection('clinicians')
-          .doc(currentClinicianId)
+          .doc(_clinicianId!)
           .get();
       setState(() {
         _clinicianData = doc.data();
@@ -64,9 +70,46 @@ class _AdvisorProfileTabState extends ConsumerState<AdvisorProfileTab> {
     }
   }
 
+  Future<void> _pickAndSaveImage() async {
+    if (_clinicianId == null) return;
+
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 400,
+      maxHeight: 400,
+      imageQuality: 70,
+    );
+
+    if (picked == null) return;
+
+    setState(() => _isLoading = true);
+
+    final bytes = await picked.readAsBytes();
+    final base64Image = base64Encode(bytes);
+
+    await FirebaseFirestore.instance
+        .collection('clinicians')
+        .doc(_clinicianId!)   // ✅ dynamic
+        .update({'profileImageBase64': base64Image});
+
+    await _loadClinicianData();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) return const Center(child: CircularProgressIndicator());
+
+    // Guard: if we couldn't resolve the clinician
+    if (_clinicianId == null) {
+      return const Center(
+        child: Text(
+          'Could not load profile.\nPlease log in again.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Colors.grey),
+        ),
+      );
+    }
 
     final name = _clinicianData?['fullName'] ?? 'Dr. Unknown';
     final specialty = _clinicianData?['specialty'] ?? 'Specialist';
@@ -103,16 +146,20 @@ class _AdvisorProfileTabState extends ConsumerState<AdvisorProfileTab> {
                             height: 90,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 3),
+                              border:
+                                  Border.all(color: Colors.white, width: 3),
                             ),
                             child: ClipOval(
-                              child: _clinicianData?['profileImageBase64'] != null
+                              child: _clinicianData?['profileImageBase64'] !=
+                                      null
                                   ? Image.memory(
-                                      base64Decode(_clinicianData!['profileImageBase64']),
+                                      base64Decode(_clinicianData![
+                                          'profileImageBase64']),
                                       fit: BoxFit.cover,
                                     )
                                   : Container(
-                                      color: Colors.white.withOpacity(0.2),
+                                      color:
+                                          Colors.white.withOpacity(0.2),
                                       child: Center(
                                         child: Text(
                                           initials,
@@ -164,9 +211,11 @@ class _AdvisorProfileTabState extends ConsumerState<AdvisorProfileTab> {
                   children: [
                     _buildInfoRow(Icons.email_outlined, 'Email', email),
                     const Divider(height: 1),
-                    _buildInfoRow(Icons.local_hospital_outlined, 'Specialty', specialty),
+                    _buildInfoRow(
+                        Icons.local_hospital_outlined, 'Specialty', specialty),
                     const Divider(height: 1),
-                    _buildInfoRow(Icons.business_outlined, 'Institution', institution),
+                    _buildInfoRow(
+                        Icons.business_outlined, 'Institution', institution),
                   ],
                 ),
 
@@ -186,13 +235,17 @@ class _AdvisorProfileTabState extends ConsumerState<AdvisorProfileTab> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    onPressed: () => _showEditProfileDialog(name, specialty, institution, email),
+                    onPressed: () => _showEditProfileDialog(
+                        name, specialty, institution, email),
                   ),
                 ),
 
                 const SizedBox(height: 24),
                 const Text('Settings',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87)),
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87)),
                 const SizedBox(height: 12),
 
                 // Settings card
@@ -254,11 +307,13 @@ class _AdvisorProfileTabState extends ConsumerState<AdvisorProfileTab> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(
-          color: Colors.black.withOpacity(0.05),
-          blurRadius: 10,
-          offset: const Offset(0, 2),
-        )],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          )
+        ],
       ),
       child: Column(children: children),
     );
@@ -274,9 +329,12 @@ class _AdvisorProfileTabState extends ConsumerState<AdvisorProfileTab> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label, style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+              Text(label,
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
               const SizedBox(height: 2),
-              Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+              Text(value,
+                  style: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w500)),
             ],
           ),
         ],
@@ -284,14 +342,18 @@ class _AdvisorProfileTabState extends ConsumerState<AdvisorProfileTab> {
     );
   }
 
-  Widget _buildSwitchRow(IconData icon, String title, bool value, Function(bool) onChanged) {
+  Widget _buildSwitchRow(
+      IconData icon, String title, bool value, Function(bool) onChanged) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
           Icon(icon, size: 20, color: const Color(0xFF1565C0)),
           const SizedBox(width: 12),
-          Expanded(child: Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500))),
+          Expanded(
+              child: Text(title,
+                  style: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w500))),
           Switch(
             value: value,
             onChanged: onChanged,
@@ -312,7 +374,10 @@ class _AdvisorProfileTabState extends ConsumerState<AdvisorProfileTab> {
           children: [
             Icon(icon, size: 20, color: const Color(0xFF1565C0)),
             const SizedBox(width: 12),
-            Expanded(child: Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500))),
+            Expanded(
+                child: Text(title,
+                    style: const TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w500))),
             Icon(Icons.chevron_right, color: Colors.grey.shade400),
           ],
         ),
@@ -322,7 +387,10 @@ class _AdvisorProfileTabState extends ConsumerState<AdvisorProfileTab> {
 
   // ── Edit Profile Dialog ───────────────────────────────────
 
-  void _showEditProfileDialog(String name, String specialty, String institution, String email) {
+  void _showEditProfileDialog(
+      String name, String specialty, String institution, String email) {
+    if (_clinicianId == null) return;
+
     final nameCtrl = TextEditingController(text: name);
     final specialtyCtrl = TextEditingController(text: specialty);
     final institutionCtrl = TextEditingController(text: institution);
@@ -332,16 +400,19 @@ class _AdvisorProfileTabState extends ConsumerState<AdvisorProfileTab> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Edit Profile'),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               _buildTextField(nameCtrl, 'Full Name', Icons.person_outline),
               const SizedBox(height: 12),
-              _buildTextField(specialtyCtrl, 'Specialty', Icons.local_hospital_outlined),
+              _buildTextField(
+                  specialtyCtrl, 'Specialty', Icons.local_hospital_outlined),
               const SizedBox(height: 12),
-              _buildTextField(institutionCtrl, 'Institution', Icons.business_outlined),
+              _buildTextField(
+                  institutionCtrl, 'Institution', Icons.business_outlined),
               const SizedBox(height: 12),
               _buildTextField(emailCtrl, 'Email', Icons.email_outlined),
             ],
@@ -355,13 +426,13 @@ class _AdvisorProfileTabState extends ConsumerState<AdvisorProfileTab> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF1565C0),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
             ),
             onPressed: () async {
-              // Save to Firestore
               await FirebaseFirestore.instance
                   .collection('clinicians')
-                  .doc(currentClinicianId)
+                  .doc(_clinicianId!)   // ✅ dynamic
                   .update({
                 'fullName': nameCtrl.text,
                 'specialty': specialtyCtrl.text,
@@ -369,7 +440,6 @@ class _AdvisorProfileTabState extends ConsumerState<AdvisorProfileTab> {
                 'contactEmail': emailCtrl.text,
               });
               Navigator.pop(context);
-              // Reload data
               _loadClinicianData();
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
@@ -378,21 +448,25 @@ class _AdvisorProfileTabState extends ConsumerState<AdvisorProfileTab> {
                 ),
               );
             },
-            child: const Text('Save', style: TextStyle(color: Colors.white)),
+            child:
+                const Text('Save', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildTextField(TextEditingController ctrl, String label, IconData icon) {
+  Widget _buildTextField(
+      TextEditingController ctrl, String label, IconData icon) {
     return TextField(
       controller: ctrl,
       decoration: InputDecoration(
         labelText: label,
         prefixIcon: Icon(icon, size: 20),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        border:
+            OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       ),
     );
   }
@@ -410,27 +484,36 @@ class _AdvisorProfileTabState extends ConsumerState<AdvisorProfileTab> {
             Text('Privacy & Data'),
           ],
         ),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         content: const SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('Data Collection', style: TextStyle(fontWeight: FontWeight.bold)),
+              Text('Data Collection',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
               SizedBox(height: 6),
-              Text('We collect posture data, session recordings, and exercise compliance data to provide you and your patients with accurate health insights.'),
+              Text(
+                  'We collect posture data, session recordings, and exercise compliance data to provide you and your patients with accurate health insights.'),
               SizedBox(height: 16),
-              Text('Data Storage', style: TextStyle(fontWeight: FontWeight.bold)),
+              Text('Data Storage',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
               SizedBox(height: 6),
-              Text('All data is securely stored using Firebase and encrypted in transit. Patient data is only accessible to their assigned clinician.'),
+              Text(
+                  'All data is securely stored using Firebase and encrypted in transit. Patient data is only accessible to their assigned clinician.'),
               SizedBox(height: 16),
-              Text('Data Sharing', style: TextStyle(fontWeight: FontWeight.bold)),
+              Text('Data Sharing',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
               SizedBox(height: 6),
-              Text('Patient data is never shared with third parties. Reports are only accessible to the patient and their assigned doctor.'),
+              Text(
+                  'Patient data is never shared with third parties. Reports are only accessible to the patient and their assigned doctor.'),
               SizedBox(height: 16),
-              Text('Your Rights', style: TextStyle(fontWeight: FontWeight.bold)),
+              Text('Your Rights',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
               SizedBox(height: 6),
-              Text('You may request deletion of your account and all associated data at any time by contacting support.'),
+              Text(
+                  'You may request deletion of your account and all associated data at any time by contacting support.'),
             ],
           ),
         ),
@@ -438,10 +521,12 @@ class _AdvisorProfileTabState extends ConsumerState<AdvisorProfileTab> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF1565C0),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
             ),
             onPressed: () => Navigator.pop(context),
-            child: const Text('Got it', style: TextStyle(color: Colors.white)),
+            child:
+                const Text('Got it', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),

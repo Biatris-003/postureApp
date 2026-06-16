@@ -120,9 +120,26 @@ class SessionData {
   Duration get duration => endTime.difference(startTime);
 }
 
+/// Holds the latest per-sensor raw quaternions [q0,q1,q2,q3] from the active
+/// session's BLE sync. Null when no session is running.
+/// Updated at the BLE data rate (every sync), so SpineViewTab can animate
+/// the spine without going through the ML preprocessing pipeline.
+class LatestQuatsNotifier extends Notifier<Map<String, List<double>>?> {
+  @override
+  Map<String, List<double>>? build() => null;
+
+  void update(Map<String, List<double>>? quats) => state = quats;
+}
+
+final latestQuatsProvider =
+    NotifierProvider<LatestQuatsNotifier, Map<String, List<double>>?>(
+  LatestQuatsNotifier.new,
+);
+
 class SessionNotifier extends Notifier<SessionState> {
   RealtimeProcessor? _processor;
   StreamSubscription<PredictionResult>? _sub;
+  StreamSubscription<Map<String, List<double>>>? _quatSub;
 
   @override
   SessionState build() {
@@ -141,6 +158,9 @@ class SessionNotifier extends Notifier<SessionState> {
     await _processor!.start();
 
     _sub = _processor!.predictions.listen(_onPrediction);
+    _quatSub = _processor!.latestQuats.listen((quats) {
+      ref.read(latestQuatsProvider.notifier).update(quats);
+    });
   }
 
   void _onPrediction(PredictionResult result) {
@@ -175,6 +195,9 @@ class SessionNotifier extends Notifier<SessionState> {
   Future<void> _cleanup() async {
     await _sub?.cancel();
     _sub = null;
+    await _quatSub?.cancel();
+    _quatSub = null;
+    ref.read(latestQuatsProvider.notifier).update(null);
     await _processor?.stop();
     _processor?.dispose();
     _processor = null;
