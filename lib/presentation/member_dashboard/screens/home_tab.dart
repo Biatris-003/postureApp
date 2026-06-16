@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../../data/datasources/auth_service_mock.dart';
 import '../../../data/datasources/ble_service_mock.dart';
 import '../../../data/datasources/ml_classifier_service_mock.dart';
 
@@ -12,6 +14,7 @@ class HomeTab extends ConsumerStatefulWidget {
 
 class _HomeTabState extends ConsumerState<HomeTab> with SingleTickerProviderStateMixin {
   late AnimationController _pulseController;
+  String? _patientName;  // ✅ resolved dynamically
 
   @override
   void initState() {
@@ -20,12 +23,43 @@ class _HomeTabState extends ConsumerState<HomeTab> with SingleTickerProviderStat
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
+    _resolvePatientName();  // ✅ fetch on load
   }
 
   @override
   void dispose() {
     _pulseController.dispose();
     super.dispose();
+  }
+
+  // ── Resolve patient name from logged-in user ──────────────
+  Future<void> _resolvePatientName() async {
+    try {
+      final appUser = ref.read(authStateProvider);
+      if (appUser == null) return;
+
+      final query = await FirebaseFirestore.instance
+          .collection('patients')
+          .where('userId', isEqualTo: appUser.userId)
+          .limit(1)
+          .get();
+
+      if (query.docs.isEmpty) return;
+
+      setState(() {
+        _patientName = query.docs.first.data()['fullName'] as String?;
+      });
+    } catch (e) {
+      // keep _patientName null — header will show fallback
+    }
+  }
+
+  // ── Greeting based on time of day ────────────────────────
+  String _getGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'Good Morning,';
+    if (hour < 17) return 'Good Afternoon,';
+    return 'Good Evening,';
   }
 
   @override
@@ -74,12 +108,23 @@ class _HomeTabState extends ConsumerState<HomeTab> with SingleTickerProviderStat
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Good Morning,', 
-              style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6), fontWeight: FontWeight.w500),
+            Text(
+              _getGreeting(),
+              style: TextStyle(
+                fontSize: 16,
+                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+                fontWeight: FontWeight.w500,
+              ),
             ),
             const SizedBox(height: 4),
-            Text('Sarah Connor', 
-              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, letterSpacing: -0.5, color: Theme.of(context).colorScheme.onSurface),
+            Text(
+              _patientName ?? '...', // ✅ real name, shows '...' while loading
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                letterSpacing: -0.5,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
             ),
           ],
         ),
@@ -89,17 +134,21 @@ class _HomeTabState extends ConsumerState<HomeTab> with SingleTickerProviderStat
             color: Theme.of(context).cardColor,
             shape: BoxShape.circle,
             boxShadow: [
-              BoxShadow(color: Theme.of(context).shadowColor.withValues(alpha: 0.05), blurRadius: 15, offset: const Offset(0, 5)),
+              BoxShadow(
+                color: Theme.of(context).shadowColor.withOpacity(0.05),
+                blurRadius: 15,
+                offset: const Offset(0, 5),
+              ),
             ],
           ),
-          child: Icon(Icons.notifications_none, color: Theme.of(context).colorScheme.onSurface),
+          child: Icon(Icons.notifications_none,
+              color: Theme.of(context).colorScheme.onSurface),
         ),
       ],
     );
   }
 
   Widget _buildCentralAvatar(BuildContext context, bool isUpright, String postureClass) {
-    // Mapping 6 postures to specific colors and assets
     final Map<String, Color> statusColors = {
       'Upright': const Color(0xFF10B981),
       'Slouching': const Color(0xFFEF4444),
@@ -136,9 +185,12 @@ class _HomeTabState extends ConsumerState<HomeTab> with SingleTickerProviderStat
       'Right Bending': Icons.arrow_forward_rounded,
     };
 
-    final Color statusColor = statusColors[postureClass] ?? (isUpright ? const Color(0xFF10B981) : const Color(0xFFEF4444));
-    final String avatarPath = avatarPaths[postureClass] ?? (isUpright ? 'assets/images/Upright.jpeg' : 'assets/images/Slouching.jpeg');
-    final IconData statusIcon = statusIcons[postureClass] ?? (isUpright ? Icons.check_circle_rounded : Icons.warning_rounded);
+    final Color statusColor = statusColors[postureClass] ??
+        (isUpright ? const Color(0xFF10B981) : const Color(0xFFEF4444));
+    final String avatarPath = avatarPaths[postureClass] ??
+        (isUpright ? 'assets/images/Upright.jpeg' : 'assets/images/Slouching.jpeg');
+    final IconData statusIcon = statusIcons[postureClass] ??
+        (isUpright ? Icons.check_circle_rounded : Icons.warning_rounded);
     final String displayText = exactTexts[postureClass] ?? postureClass;
 
     return Center(
@@ -155,25 +207,28 @@ class _HomeTabState extends ConsumerState<HomeTab> with SingleTickerProviderStat
                   color: Theme.of(context).cardColor,
                   boxShadow: [
                     BoxShadow(
-                      color: statusColor.withValues(alpha: 0.15 * _pulseController.value),
+                      color: statusColor.withOpacity(0.15 * _pulseController.value),
                       blurRadius: 40,
                       spreadRadius: 10 * _pulseController.value,
                     ),
                     BoxShadow(
-                      color: Theme.of(context).shadowColor.withValues(alpha: 0.08), 
-                      blurRadius: 30, 
+                      color: Theme.of(context).shadowColor.withOpacity(0.08),
+                      blurRadius: 30,
                       offset: const Offset(0, 15),
                     ),
                   ],
-                  border: Border.all(color: statusColor.withValues(alpha: 0.3), width: 4),
+                  border: Border.all(
+                      color: statusColor.withOpacity(0.3), width: 4),
                 ),
                 child: ClipOval(
                   child: Image.asset(
                     avatarPath,
                     fit: BoxFit.contain,
                     errorBuilder: (context, error, stackTrace) => Container(
-                      color: Theme.of(context).primaryColor.withValues(alpha: 0.1),
-                      child: Icon(Icons.person_rounded, size: 100, color: Theme.of(context).primaryColor.withValues(alpha: 0.5)),
+                      color: Theme.of(context).primaryColor.withOpacity(0.1),
+                      child: Icon(Icons.person_rounded,
+                          size: 100,
+                          color: Theme.of(context).primaryColor.withOpacity(0.5)),
                     ),
                   ),
                 ),
@@ -184,17 +239,13 @@ class _HomeTabState extends ConsumerState<HomeTab> with SingleTickerProviderStat
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             decoration: BoxDecoration(
-              color: statusColor.withValues(alpha: 0.1),
+              color: statusColor.withOpacity(0.1),
               borderRadius: BorderRadius.circular(30),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  statusIcon,
-                  color: statusColor,
-                  size: 24,
-                ),
+                Icon(statusIcon, color: statusColor, size: 24),
                 const SizedBox(width: 8),
                 Text(
                   displayText,
@@ -214,15 +265,16 @@ class _HomeTabState extends ConsumerState<HomeTab> with SingleTickerProviderStat
   }
 
   Widget _buildPostureScoreSlider(BuildContext context, double confidence, bool isUpright) {
-    // Generate a mock score based on confidence and upright state 
-    // Score is 0 to 100. Upright is 80-100. Non-upright is 0-79.
     double score = isUpright ? 80 + (confidence * 20) : (1.0 - confidence) * 79;
-    Color sliderColor = Theme.of(context).primaryColor;
-    
+    Color sliderColor;
+
     if (score > 80) {
       sliderColor = const Color(0xFF10B981);
-    } else if (score > 50) sliderColor = const Color(0xFFF59E0B);
-    else sliderColor = const Color(0xFFEF4444);
+    } else if (score > 50) {
+      sliderColor = const Color(0xFFF59E0B);
+    } else {
+      sliderColor = const Color(0xFFEF4444);
+    }
 
     return Container(
       padding: const EdgeInsets.all(24),
@@ -230,7 +282,10 @@ class _HomeTabState extends ConsumerState<HomeTab> with SingleTickerProviderStat
         color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(28),
         boxShadow: [
-          BoxShadow(color: Theme.of(context).shadowColor.withValues(alpha: 0.05), blurRadius: 20, offset: const Offset(0, 10))
+          BoxShadow(
+              color: Theme.of(context).shadowColor.withOpacity(0.05),
+              blurRadius: 20,
+              offset: const Offset(0, 10))
         ],
       ),
       child: Column(
@@ -263,26 +318,26 @@ class _HomeTabState extends ConsumerState<HomeTab> with SingleTickerProviderStat
           const SizedBox(height: 24),
           Stack(
             children: [
-              // Background track
               Container(
                 height: 16,
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.05),
+                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.05),
                   borderRadius: BorderRadius.circular(8),
                 ),
               ),
-              // Filled track
               AnimatedContainer(
                 duration: const Duration(milliseconds: 500),
                 curve: Curves.easeOutCubic,
                 height: 16,
-                width: MediaQuery.of(context).size.width * (score / 100).clamp(0.0, 1.0) * 0.75, // Approximating width relative to screen padding
+                width: MediaQuery.of(context).size.width *
+                    (score / 100).clamp(0.0, 1.0) *
+                    0.75,
                 decoration: BoxDecoration(
                   color: sliderColor,
                   borderRadius: BorderRadius.circular(8),
                   boxShadow: [
                     BoxShadow(
-                      color: sliderColor.withValues(alpha: 0.4),
+                      color: sliderColor.withOpacity(0.4),
                       blurRadius: 10,
                       offset: const Offset(0, 4),
                     )
@@ -295,9 +350,21 @@ class _HomeTabState extends ConsumerState<HomeTab> with SingleTickerProviderStat
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Poor', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4), fontWeight: FontWeight.w600, fontSize: 12)),
-              Text('Fair', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4), fontWeight: FontWeight.w600, fontSize: 12)),
-              Text('Optimal', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4), fontWeight: FontWeight.w600, fontSize: 12)),
+              Text('Poor',
+                  style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.4),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12)),
+              Text('Fair',
+                  style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.4),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12)),
+              Text('Optimal',
+                  style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.4),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12)),
             ],
           )
         ],
@@ -305,4 +372,3 @@ class _HomeTabState extends ConsumerState<HomeTab> with SingleTickerProviderStat
     );
   }
 }
-

@@ -61,7 +61,6 @@ class FirebaseAuthService {
           userId: userId,
           email: email,
           role: role,
-          profileData: data['profileData'],
         );
       }
 
@@ -74,6 +73,46 @@ class FirebaseAuthService {
       rethrow;
     }
   }
+
+  Future<String> _generatePatientId() async {
+  final snapshot = await _db.collection('patients').get();
+
+  int maxNumber = 0;
+
+  for (final doc in snapshot.docs) {
+    final patientId = doc.data()['patientId'] as String?;
+
+    if (patientId != null && patientId.startsWith('p')) {
+      final number = int.tryParse(patientId.substring(1)) ?? 0;
+
+      if (number > maxNumber) {
+        maxNumber = number;
+      }
+    }
+  }
+
+  return 'p${(maxNumber + 1).toString().padLeft(3, '0')}';
+}
+
+Future<String> _generateClinicianId() async {
+  final snapshot = await _db.collection('clinicians').get();
+
+  int maxNumber = 0;
+
+  for (final doc in snapshot.docs) {
+    final clinicianId = doc.data()['clinicianId'] as String?;
+
+    if (clinicianId != null && clinicianId.startsWith('c')) {
+      final number = int.tryParse(clinicianId.substring(1)) ?? 0;
+
+      if (number > maxNumber) {
+        maxNumber = number;
+      }
+    }
+  }
+
+  return 'c${(maxNumber + 1).toString().padLeft(3, '0')}';
+}
 
   /// Sign up new user
   Future<AppUser> signUp({
@@ -104,6 +143,38 @@ class FirebaseAuthService {
         'createdAt': FieldValue.serverTimestamp(),
       });
 
+      if (role == 'Member') {
+        final patientId = await _generatePatientId();
+
+        await _db.collection('patients').doc(patientId).set({
+          'patientId': patientId,
+          'userId': userId,
+
+          'fullName': profileData['fullName'],
+          'contactEmail': profileData['contactEmail'],
+          'dateOfBirth': profileData['dateOfBirth'],
+          'gender': profileData['gender'],
+          'preferredLanguage': profileData['preferredLanguage'],
+
+          'deviceId': null,
+          'clinicianId': null,
+          'doctorNote': '',
+        });
+      } else {
+        final clinicianId = await _generateClinicianId();
+
+        await _db.collection('clinicians').doc(clinicianId).set({
+          'clinicianId': clinicianId,
+          'userId': userId,
+
+          'fullName': profileData['fullName'],
+          'contactEmail': profileData['contactEmail'],
+
+          'specialty': profileData['specialty'],
+          'institution': profileData['institution'],
+        });
+      }
+
       debugPrint('✅ Firestore document created for userId: $userId with role: $role');
 
       return AppUser(
@@ -111,7 +182,6 @@ class FirebaseAuthService {
         userId: userId,
         email: email,
         role: role,
-        profileData: profileData,
       );
     } on FirebaseAuthException catch (e) {
       debugPrint('❌ Firebase Auth Error: ${e.code} - ${e.message}');
