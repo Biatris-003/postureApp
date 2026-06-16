@@ -7,7 +7,6 @@ import 'presentation/member_dashboard/screens/member_dashboard_screen.dart';
 import 'presentation/advisor_dashboard/screens/advisor_dashboard_screen.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
-// import 'data/datasources/firebase_seeder.dart';  // Uncomment this line to seed Firebase with initial data ONLY
 
 final firebaseInitializedProvider = Provider<bool>((ref) => throw UnimplementedError());
 
@@ -29,7 +28,7 @@ void main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
-    firebaseInitialized = true;
+firebaseInitialized = true;
   } catch (e) {
     debugPrint('Firebase initialization failed: $e');
     errorMessage = e.toString();

@@ -23,6 +23,7 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
   List<Map<String, dynamic>> _exercises = [];
   List<Map<String, dynamic>> _reports = [];
   List<Map<String, dynamic>> _classifications = [];
+  List<Map<String, dynamic>> _sessions = [];
   bool _isLoading = true;
 
   @override
@@ -41,11 +42,12 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
   Future<void> _loadAllData() async {
     setState(() => _isLoading = true);
     try {
+      await _loadPatient(); // must finish first — sessions fall back to email lookup
       await Future.wait([
-        _loadPatient(),
         _loadExercises(),
         _loadReports(),
         _loadClassifications(),
+        _loadSessions(),
       ]);
     } catch (e) {
       debugPrint('Error loading data: $e');
@@ -100,6 +102,39 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
         .get();
 
     _classifications = snapshot.docs.map((doc) => doc.data()).toList();
+  }
+
+  Future<void> _loadSessions() async {
+    // Try direct UID first (works when patients doc ID == auth UID)
+    var snapshot = await FirebaseFirestore.instance
+        .collection('sessionResults')
+        .where('patientId', isEqualTo: widget.member.uid)
+        .orderBy('startTimestamp', descending: true)
+        .limit(10)
+        .get();
+
+    // If nothing found, bridge via email → look up auth UID in users collection
+    if (snapshot.docs.isEmpty) {
+      final email = _patientData?['contactEmail'] as String?;
+      if (email != null) {
+        final userQuery = await FirebaseFirestore.instance
+            .collection('users')
+            .where('email', isEqualTo: email)
+            .limit(1)
+            .get();
+        if (userQuery.docs.isNotEmpty) {
+          final authUid = userQuery.docs.first.id;
+          snapshot = await FirebaseFirestore.instance
+              .collection('sessionResults')
+              .where('patientId', isEqualTo: authUid)
+              .orderBy('startTimestamp', descending: true)
+              .limit(10)
+              .get();
+        }
+      }
+    }
+
+    _sessions = snapshot.docs.map((doc) => doc.data()).toList();
   }
 
   // Calculate posture score
@@ -486,6 +521,11 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
 
           const SizedBox(height: 16),
 
+          // Session history card
+          _buildSessionsSection(),
+
+          const SizedBox(height: 16),
+
           // Doctor's note card
           Container(
             padding: const EdgeInsets.all(20),
@@ -526,6 +566,127 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
                   ),
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Session History ───────────────────────────────────────
+
+  Widget _buildSessionsSection() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(
+          color: Colors.black.withOpacity(0.05),
+          blurRadius: 15,
+          offset: const Offset(0, 4),
+        )],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text('Session History',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              const Spacer(),
+              Text(
+                '${_sessions.length} recent',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          if (_sessions.isEmpty)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Text('No sessions found',
+                    style: TextStyle(color: Colors.grey.shade400, fontSize: 13)),
+              ),
+            )
+          else
+            ...(_sessions.map((s) => _buildSessionRow(s))),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSessionRow(Map<String, dynamic> session) {
+    final score = (session['sessionScore'] as num?)?.toInt() ?? 0;
+    final duration = (session['durationMinutes'] as num?)?.toInt() ?? 0;
+    final status = session['status'] as String? ?? 'completed';
+    final startTs = session['startTimestamp'];
+    DateTime? date;
+    if (startTs is Timestamp) date = startTs.toDate();
+
+    final scoreColor = score >= 70
+        ? const Color(0xFF4CAF50)
+        : score >= 40
+            ? const Color(0xFFFF9800)
+            : const Color(0xFFFF6B6B);
+
+    final dateStr = date != null
+        ? '${date.day}/${date.month}/${date.year}  '
+          '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}'
+        : '—';
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: scoreColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Center(
+              child: Text(
+                '$score%',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: scoreColor,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  dateStr,
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '${duration}min  ·  $status',
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: status == 'completed'
+                  ? const Color(0xFF4CAF50).withOpacity(0.1)
+                  : Colors.orange.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              status == 'completed' ? Icons.check_circle_outline : Icons.cancel_outlined,
+              size: 16,
+              color: status == 'completed' ? const Color(0xFF4CAF50) : Colors.orange,
             ),
           ),
         ],
