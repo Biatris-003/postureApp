@@ -1,8 +1,13 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
-import '../../../data/datasources/ble_service_mock.dart';
-import '../../../data/datasources/ml_classifier_service_mock.dart';
+import '../../../services/ml/spine_kinematics.dart';
+import '../../../services/session_provider.dart';
+
+// ── SpineViewTab ─────────────────────────────────────────────────────────────
 
 class SpineViewTab extends ConsumerStatefulWidget {
   const SpineViewTab({super.key});
@@ -11,370 +16,855 @@ class SpineViewTab extends ConsumerStatefulWidget {
   ConsumerState<SpineViewTab> createState() => _SpineViewTabState();
 }
 
-class _SpineViewTabState extends ConsumerState<SpineViewTab> with SingleTickerProviderStateMixin {
-  late AnimationController _animationController;
-  late Animation<double> _breatheAnimation;
+class _SpineViewTabState extends ConsumerState<SpineViewTab>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _breathe;
+  late final WebViewController _wvc;
+  bool _webReady = false;
+
+  // Neutral quaternions captured at calibration time (upright sitting).
+  // Auto-set on first data frame; user can reset via the Calibrate button.
+  Map<String, List<double>>? _neutralQuats;
+  bool _autoCalibrated = false;
+
+  // ── Adaptive drift correction ────────────────────────────────────────────
+  // When all sensors are approximately still (|q_prev · q_curr| > threshold),
+  // the neutral is slowly SLERP-ed towards the current reading so IMU gyro
+  // drift doesn't accumulate visible error over time.
+  static const _stillDot  = 0.9995; // ≈ 3.2° between frames = "still"
+  static const _driftRate = 0.005;  // 0.5 % correction per 200 ms frame
+
+  static double _dot(List<double> a, List<double> b) =>
+      a[0]*b[0] + a[1]*b[1] + a[2]*b[2] + a[3]*b[3];
+
+  static List<double> _lerp(List<double> a, List<double> b, double t) {
+    final r = List<double>.generate(4, (i) => a[i] + (b[i] - a[i]) * t);
+    final n = math.sqrt(r.fold(0.0, (s, v) => s + v * v));
+    return n < 1e-8 ? a : r.map((v) => v / n).toList();
+  }
+  // ────────────────────────────────────────────────────────────────────────
 
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(
-        vsync: this, duration: const Duration(seconds: 3))..repeat(reverse: true);
-    
-    _breatheAnimation = Tween<double>(begin: 0.98, end: 1.02).animate(
-      CurvedAnimation(parent: _animationController, curve: Curves.easeInOutSine)
-    );
+    _breathe = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 4),
+    )..repeat(reverse: true);
+
+    _wvc = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(const Color(0xFF111827))
+      ..setNavigationDelegate(NavigationDelegate(
+        onPageFinished: (_) => setState(() => _webReady = true),
+      ))
+      ..loadFlutterAsset('assets/web/spine_viewer.html');
   }
 
   @override
   void dispose() {
-    _animationController.dispose();
+    _breathe.dispose();
     super.dispose();
+  }
+
+  void _calibrate(Map<String, List<double>> quats) {
+    setState(() => _neutralQuats = Map.from(quats));
+  }
+
+  void _sendToWebView(Map<String, List<double>> quats) {
+    if (!_webReady) return;
+    final pts = SpineKinematics.compute(quats, neutralQuats: _neutralQuats);
+    final buf = StringBuffer('[');
+    for (int i = 0; i < pts.length; i++) {
+      if (i > 0) buf.write(',');
+      buf.write('${pts[i].x.toStringAsFixed(4)},${pts[i].y.toStringAsFixed(4)},${pts[i].z.toStringAsFixed(4)}');
+    }
+    buf.write(']');
+    _wvc.runJavaScript('updateSpine(${buf.toString()})');
   }
 
   @override
   Widget build(BuildContext context) {
-    final bleService = ref.watch(bleServiceProvider);
-    final mlService = ref.watch(mlClassifierServiceProvider);
-    
-    final primaryColor = Theme.of(context).primaryColor;
-    final onSurfaceColor = Theme.of(context).colorScheme.onSurface;
+    final session = ref.watch(sessionProvider);
+    final quats   = ref.watch(latestQuatsProvider);
+
+    ref.listen<Map<String, List<double>>?>(latestQuatsProvider, (prev, next) {
+      if (next == null) return;
+
+      // Auto-calibrate on the first data frame of each session.
+      if (!_autoCalibrated) {
+        _autoCalibrated = true;
+        _calibrate(next);
+        _sendToWebView(next);
+        return;
+      }
+
+      // Adaptive drift correction: while sensors are still, gradually pull
+      // the neutral reference towards the current reading to cancel gyro drift.
+      final neutral = _neutralQuats;
+      if (prev != null && neutral != null) {
+        final allStill = next.keys.every((id) {
+          final qP = prev[id], qC = next[id];
+          return qP == null || qC == null || _dot(qP, qC).abs() > _stillDot;
+        });
+        if (allStill) {
+          setState(() {
+            _neutralQuats = {
+              for (final id in next.keys)
+                id: _lerp(neutral[id] ?? next[id]!, next[id]!, _driftRate),
+            };
+          });
+        }
+      }
+
+      _sendToWebView(next);
+    });
+
+    // Reset calibration when session ends.
+    ref.listen<SessionState>(sessionProvider, (_, next) {
+      if (next.status == SessionStatus.idle && _autoCalibrated) {
+        setState(() {
+          _neutralQuats = null;
+          _autoCalibrated = false;
+        });
+      }
+    });
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: StreamBuilder<List<double>>(
-        stream: bleService.sensorDataStream,
-        builder: (context, snapshot) {
-          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-
-          final rawData = snapshot.data!;
-          final isUpright = mlService.classify(rawData).postureClass == 'Upright';
-          
-          double mockSensorVal = rawData.isNotEmpty ? rawData[0] : 0.5;
-          double cervicalAngle = 30 + (mockSensorVal * 15 * (isUpright ? 0.2 : 1.0)); 
-          double thoracicAngle = 35 + (mockSensorVal * 20 * (isUpright ? 0.1 : 1.2));
-
-          return SafeArea(
-            child: Stack(
-              children: [
-                _buildGridBackground(primaryColor),
-                Column(
-                  children: [
-                    _buildHeader(context),
-                    Expanded(
-                      child: Row(
-                        children: [
-                          _buildMetricsPanel(context, cervicalAngle, thoracicAngle, isUpright),
-                          Expanded(
-                            flex: 2,
-                            child: AnimatedBuilder(
-                              animation: _breatheAnimation,
-                              builder: (context, child) {
-                                return Transform.scale(
-                                  scale: _breatheAnimation.value,
-                                  child: LayoutBuilder(
-                                    builder: (context, constraints) {
-                                      return Stack(
-                                        alignment: Alignment.center,
-                                        children: [
-                                          // Realistic Anatomical Side-Profile Silhouette
-                                          Opacity(
-                                            opacity: 0.4,
-                                            child: Image.asset(
-                                              'assets/images/spine_silhouette.png',
-                                              width: constraints.maxWidth * 0.95,
-                                              height: constraints.maxHeight * 0.95,
-                                              fit: BoxFit.contain,
-                                              errorBuilder: (context, error, stackTrace) => Container(
-                                                width: constraints.maxWidth * 0.95,
-                                                height: constraints.maxHeight * 0.95,
-                                                alignment: Alignment.center,
-                                                child: Icon(
-                                                  Icons.accessibility_new_rounded,
-                                                  size: constraints.maxHeight * 0.4,
-                                                  color: primaryColor.withValues(alpha: 0.1),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                          // 3D Spine Visualization aligned to the silhouette's back
-                                          IgnorePointer(
-                                            child: SizedBox(
-                                              width: constraints.maxWidth * 0.95,
-                                              height: constraints.maxHeight * 0.95,
-                                              child: CustomPaint(
-                                              painter: SpinePainter(
-                                                cervicalAngle: cervicalAngle,
-                                                thoracicAngle: thoracicAngle,
-                                                isUpright: isUpright,
-                                                primaryColor: primaryColor,
-                                                onSurfaceColor: onSurfaceColor,
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      );
-                                    },
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            _Header(session: session),
+            Expanded(
+              child: quats == null || session.status == SessionStatus.idle
+                  ? _IdleBody(status: session.status)
+                  : _LiveBody(
+                      quats: quats,
+                      wvc: _wvc,
+                      neutralQuats: _neutralQuats,
+                      onCalibrate: () => _calibrate(quats),
                     ),
-                  ],
-                ),
-              ],
             ),
-          );
-        },
+          ],
+        ),
       ),
     );
   }
+}
 
-  Widget _buildGridBackground(Color primaryColor) {
-    return CustomPaint(
-      size: const Size(double.infinity, double.infinity),
-      painter: GridPainter(gridColor: primaryColor.withValues(alpha: 0.05)),
-    );
-  }
+// ── Header ───────────────────────────────────────────────────────────────────
 
-  Widget _buildHeader(BuildContext context) {
+class _Header extends StatelessWidget {
+  const _Header({required this.session});
+  final SessionState session;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = session.status == SessionStatus.active;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Live Spine Model', style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontSize: 24, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 4),
-              Text('Real-time sagittal plane projection', style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6), fontSize: 14)),
-            ],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Live Spine Model',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '3D real-time model  ·  drag to rotate',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55),
+                    fontSize: 13,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
           ),
+          const SizedBox(width: 12),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             decoration: BoxDecoration(
-              color: Theme.of(context).cardColor, 
-              borderRadius: BorderRadius.circular(20), 
-              boxShadow: [BoxShadow(color: Theme.of(context).shadowColor.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 4))]
+              color: Theme.of(context).cardColor,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: Theme.of(context).shadowColor.withValues(alpha: 0.06),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
             child: Row(
               children: [
-                const Icon(Icons.circle, color: Color(0xFF10B981), size: 10),
+                Icon(Icons.circle,
+                    color: active
+                        ? const Color(0xFF10B981)
+                        : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
+                    size: 10),
                 const SizedBox(width: 8),
-                Text('REC', style: TextStyle(color: Theme.of(context).colorScheme.onSurface, fontWeight: FontWeight.w800, fontSize: 13, letterSpacing: 1)),
+                Text(
+                  active ? 'LIVE' : 'IDLE',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                    letterSpacing: 1,
+                  ),
+                ),
               ],
             ),
-          )
+          ),
         ],
       ),
     );
   }
+}
 
-  Widget _buildMetricsPanel(BuildContext context, double cervical, double thoracic, bool isUpright) {
-    return Container(
-      width: 140, // Restored to original
-      padding: const EdgeInsets.only(left: 24, top: 40), // Restored to original
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          return SingleChildScrollView(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: constraints.maxHeight),
-              child: IntrinsicHeight(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildMetric(context, 'Cervical Lordosis', '${cervical.toStringAsFixed(1)}°', cervical > 40 ? const Color(0xFFEF4444) : Theme.of(context).primaryColor),
-                    const SizedBox(height: 40),
-                    _buildMetric(context, 'Thoracic Kyphosis', '${thoracic.toStringAsFixed(1)}°', thoracic > 50 ? const Color(0xFFF59E0B) : Theme.of(context).primaryColor),
-                    const SizedBox(height: 40),
-                    _buildMetric(context, 'Lumbar Lordosis', '42.0°', Theme.of(context).primaryColor),
-                    const Spacer(),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).cardColor,
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [BoxShadow(color: Theme.of(context).shadowColor.withValues(alpha: 0.05), blurRadius: 15, offset: const Offset(0, 5))]
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(
-                              color: isUpright ? const Color(0xFF10B981).withValues(alpha: 0.15) : const Color(0xFFEF4444).withValues(alpha: 0.15),
-                              shape: BoxShape.circle
-                            ),
-                            child: Icon(isUpright ? Icons.check_circle_outline_rounded : Icons.warning_amber_rounded, color: isUpright ? const Color(0xFF10B981) : const Color(0xFFEF4444), size: 20),
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            isUpright ? 'Alignment Optimal' : 'Deviation Detected',
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.onSurface,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              height: 1.2,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 40),
-                  ],
-                ),
+// ── Idle state ────────────────────────────────────────────────────────────────
+
+class _IdleBody extends StatelessWidget {
+  const _IdleBody({required this.status});
+  final SessionStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final starting = status == SessionStatus.starting;
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            starting ? Icons.sensors : Icons.accessibility_new_rounded,
+            size: 72,
+            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.15),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            starting ? 'Connecting to sensors…' : 'No active session',
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          if (!starting) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Start a session from the Monitoring tab\nto see your live spine model.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.35),
+                fontSize: 14,
+                height: 1.5,
               ),
             ),
-          );
-        },
+          ],
+        ],
       ),
     );
   }
+}
 
-  Widget _buildMetric(BuildContext context, String label, String value, Color valueColor) {
+// ── Live body ─────────────────────────────────────────────────────────────────
+
+class _LiveBody extends StatelessWidget {
+  const _LiveBody({
+    required this.quats,
+    required this.wvc,
+    required this.neutralQuats,
+    required this.onCalibrate,
+  });
+  final Map<String, List<double>> quats;
+  final WebViewController wvc;
+  final Map<String, List<double>>? neutralQuats;
+  final VoidCallback onCalibrate;
+
+  @override
+  Widget build(BuildContext context) {
+    final metrics = SpineKinematics.clinicalAngles(quats, neutralQuats: neutralQuats);
+
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(value, style: TextStyle(color: valueColor, fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.5)),
-        const SizedBox(height: 6),
-        Text(label, style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5), fontSize: 13, fontWeight: FontWeight.w600)),
+        _MetricsRow(metrics: metrics),
+        const SizedBox(height: 4),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton.icon(
+                onPressed: onCalibrate,
+                icon: const Icon(Icons.tune_rounded, size: 14),
+                label: const Text('Calibrate neutral', style: TextStyle(fontSize: 11)),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            child: WebViewWidget(controller: wvc),
+          ),
+        ),
       ],
     );
   }
 }
 
-class GridPainter extends CustomPainter {
-  final Color gridColor;
-  GridPainter({required this.gridColor});
+// ── Metrics row ───────────────────────────────────────────────────────────────
+
+class _MetricsRow extends StatelessWidget {
+  const _MetricsRow({required this.metrics});
+  final Map<String, double> metrics;
 
   @override
-  void paint(Canvas canvas, Size size) {
-    var paint = Paint()
-      ..color = gridColor
-      ..strokeWidth = 1.0;
-
-    for (double i = 0; i < size.width; i += 30) {
-      canvas.drawLine(Offset(i, 0), Offset(i, size.height), paint);
-    }
-    for (double i = 0; i < size.height; i += 30) {
-      canvas.drawLine(Offset(0, i), Offset(size.width, i), paint);
-    }
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Row(
+        children: [
+          _MetricCard(
+            label: 'Lumbar\nLordosis',
+            value: metrics['lumbarLordosis'] ?? 0,
+            unit: '°',
+            warnAbove: 60,
+            icon: Icons.arrow_downward_rounded,
+          ),
+          const SizedBox(width: 8),
+          _MetricCard(
+            label: 'Thoracic\nKyphosis',
+            value: metrics['thoracicKyphosis'] ?? 0,
+            unit: '°',
+            warnAbove: 50,
+            icon: Icons.arrow_upward_rounded,
+          ),
+          const SizedBox(width: 8),
+          _MetricCard(
+            label: 'Cervical\nLordosis',
+            value: metrics['cervicalLordosis'] ?? 0,
+            unit: '°',
+            warnAbove: 40,
+            icon: Icons.arrow_downward_rounded,
+          ),
+          const SizedBox(width: 8),
+          _MetricCard(
+            label: 'Lateral\nDeviation',
+            value: metrics['lateralDeviation'] ?? 0,
+            unit: '°',
+            warnAbove: 10,
+            icon: Icons.swap_horiz_rounded,
+          ),
+        ],
+      ),
+    );
   }
-
-  @override
-  bool shouldRepaint(covariant GridPainter oldDelegate) => oldDelegate.gridColor != gridColor;
 }
 
-class SpinePainter extends CustomPainter {
-  final double cervicalAngle;
-  final double thoracicAngle;
-  final bool isUpright;
-  final Color primaryColor;
-  final Color onSurfaceColor;
+class _MetricCard extends StatelessWidget {
+  const _MetricCard({
+    required this.label,
+    required this.value,
+    required this.unit,
+    required this.warnAbove,
+    required this.icon,
+  });
 
-  SpinePainter({required this.cervicalAngle, required this.thoracicAngle, required this.isUpright, required this.primaryColor, required this.onSurfaceColor});
+  final String label;
+  final double value;
+  final String unit;
+  final double warnAbove;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final warn  = value > warnAbove;
+    final color = warn ? const Color(0xFFEF4444) : Theme.of(context).primaryColor;
+
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [
+            BoxShadow(
+              color: Theme.of(context).shadowColor.withValues(alpha: 0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: color, size: 16),
+            const SizedBox(height: 4),
+            Text(
+              '${value.toStringAsFixed(1)}$unit',
+              style: TextStyle(
+                color: color,
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                height: 1.3,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── SpinePainter ──────────────────────────────────────────────────────────────
+
+class SpinePainter extends CustomPainter {
+  SpinePainter({
+    required this.points,
+    required this.breatheScale,
+    required this.primaryColor,
+    required this.surfaceColor,
+  });
+
+  final List<SpinePoint3D> points;
+  final double breatheScale;
+  final Color primaryColor;
+  final Color surfaceColor;
+
+  // Sensor vertebra indices (mirrors SpineKinematics constants).
+  static const _sensorIdx = {
+    'L5': SpineKinematics.idxL5,
+    'T12': SpineKinematics.idxT12,
+    'T4': SpineKinematics.idxT4,
+    'C7': SpineKinematics.idxC7,
+  };
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Lead factor: Aligning the spine vertically to the neck-to-sacrum region of the silhouette
-    final double centerX = size.width / 2 + 15; // Shift to the right (back of the profile)
-    final double topY = size.height * 0.30; // Start at the neck
-    final double bottomY = size.height * 0.90; // End at the L5/Sacrum region
-    final double totalHeight = bottomY - topY;
+    final halfW = size.width / 2;
+    final dividerPaint = Paint()
+      ..color = surfaceColor.withValues(alpha: 0.08)
+      ..strokeWidth = 1;
+    canvas.drawLine(Offset(halfW, 0), Offset(halfW, size.height), dividerPaint);
 
-    double cervicalOffset = (cervicalAngle - 30) * 1.5; 
-    double thoracicOffset = (thoracicAngle - 35) * 2.0;
+    _drawPanel(
+      canvas,
+      rect: Rect.fromLTWH(0, 0, halfW, size.height),
+      label: 'SAGITTAL',
+      sublabel: 'Side view',
+      sagittal: true,
+    );
+    _drawPanel(
+      canvas,
+      rect: Rect.fromLTWH(halfW, 0, halfW, size.height),
+      label: 'CORONAL',
+      sublabel: 'Front view',
+      sagittal: false,
+    );
+  }
 
-    // Decrease the base curvature for the aligned (upright) spine to make it look healthier
-    double curveScale = isUpright ? 0.4 : 1.0;
-    // Increase thoracic outward curve just a little bit
-    double thoracicCurveScale = isUpright ? 0.6 : 1.0;
+  void _drawPanel(
+    Canvas canvas, {
+    required Rect rect,
+    required String label,
+    required String sublabel,
+    required bool sagittal,
+  }) {
+    canvas.save();
+    canvas.clipRect(rect);
 
-    Offset p0 = Offset(centerX, topY); // Base of skull
-    Offset p1 = Offset(centerX - (30 * curveScale) - cervicalOffset, topY + totalHeight * 0.2); 
-    Offset p2 = Offset(centerX + (40 * thoracicCurveScale) + thoracicOffset, topY + totalHeight * 0.5); 
-    Offset p3 = Offset(centerX - (20 * curveScale), topY + totalHeight * 0.8);  
-    Offset p4 = Offset(centerX + (5 * curveScale), bottomY); // Sacrum
+    // Layout constants.
+    const topPad   = 32.0;
+    const botPad   = 16.0;
+    final cx       = rect.left + rect.width / 2;
+    final breatheFactor = 0.96 + breatheScale * 0.04; // subtle 4% oscillation
+    final chainH   = (rect.height - topPad - botPad) * 0.92 * breatheFactor;
+    final sacralY  = rect.top + rect.height - botPad - 8;
+    final scale    = chainH; // 1 normalized unit = chainH pixels
+    final hScale   = scale * 2.5; // amplify horizontal deflections for readability
 
-    // Draw the main spline - slimmer for realism
-    var linePaint = Paint()
-      ..color = isUpright ? primaryColor.withValues(alpha: 0.3) : const Color(0xFFEF4444).withValues(alpha: 0.3)
+    // Reference line (neutral straight spine).
+    canvas.drawLine(
+      Offset(cx, sacralY),
+      Offset(cx, sacralY - chainH),
+      Paint()
+        ..color = surfaceColor.withValues(alpha: 0.06)
+        ..strokeWidth = 1.5
+        ..style = PaintingStyle.stroke,
+    );
+
+    // Map 3D points to 2D screen coordinates.
+    Offset project(SpinePoint3D p) {
+      final h = sagittal ? p.x : p.z;
+      return Offset(cx + h * hScale, sacralY - p.y * scale);
+    }
+
+    final pts2d = points.map(project).toList();
+
+    // Body silhouette drawn behind the spine.
+    _drawBodySilhouette(canvas, pts2d, sagittal, scale, rect);
+
+    // Draw smooth Catmull-Rom spine curve.
+    _drawSplineCurve(canvas, pts2d);
+
+    // Draw vertebral blocks oriented perpendicular to the spine direction.
+    for (int i = 0; i < pts2d.length; i++) {
+      final prev     = i > 0 ? pts2d[i - 1] : pts2d[i];
+      final next     = i < pts2d.length - 1 ? pts2d[i + 1] : pts2d[i];
+      final tangent  = next - prev;
+      final isSensor = _sensorIdx.values.contains(i);
+      final color    = _levelColor(i);
+
+      // Block width by region: lumbar widest, cervical narrowest.
+      final blockW = isSensor ? 16.0
+          : (i == 0                           ? 13.0   // sacrum
+          :  i < SpineKinematics.idxT12      ? 13.0   // lumbar
+          :  i < SpineKinematics.idxT4       ? 11.0   // thoracic
+          :  i < SpineKinematics.idxC7       ? 10.0   // upper thoracic
+          :                                    8.0);  // cervical
+
+      _drawVertebraBlock(canvas, pts2d[i], tangent, blockW, 5.5, color, isSensor);
+    }
+
+    // Sensor labels.
+    _sensorIdx.forEach((name, idx) {
+      _drawLabel(canvas, pts2d[idx], name, rect, sagittal);
+    });
+
+    // Panel title.
+    _drawPanelTitle(canvas, rect, label, sublabel);
+
+    canvas.restore();
+  }
+
+  // Catmull-Rom → cubic Bézier smooth curve, colored by region.
+  void _drawSplineCurve(Canvas canvas, List<Offset> pts) {
+    if (pts.length < 2) return;
+
+    Offset ghost(int i) {
+      if (i < 0) return Offset(2 * pts[0].dx - pts[1].dx, 2 * pts[0].dy - pts[1].dy);
+      if (i >= pts.length) {
+        return Offset(
+          2 * pts.last.dx - pts[pts.length - 2].dx,
+          2 * pts.last.dy - pts[pts.length - 2].dy,
+        );
+      }
+      return pts[i];
+    }
+
+    for (int i = 0; i < pts.length - 1; i++) {
+      final p0 = ghost(i - 1);
+      final p1 = pts[i];
+      final p2 = pts[i + 1];
+      final p3 = ghost(i + 2);
+
+      final cp1 = Offset(p1.dx + (p2.dx - p0.dx) / 6, p1.dy + (p2.dy - p0.dy) / 6);
+      final cp2 = Offset(p2.dx - (p3.dx - p1.dx) / 6, p2.dy - (p3.dy - p1.dy) / 6);
+
+      final col = Color.lerp(_levelColor(i), _levelColor(i + 1), 0.5)!
+          .withValues(alpha: 0.85);
+
+      final path = Path()
+        ..moveTo(p1.dx, p1.dy)
+        ..cubicTo(cp1.dx, cp1.dy, cp2.dx, cp2.dy, p2.dx, p2.dy);
+
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = col
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.0
+          ..strokeCap = StrokeCap.round,
+      );
+    }
+  }
+
+  // ── Vertebra block ──────────────────────────────────────────────────────────
+
+  void _drawVertebraBlock(Canvas canvas, Offset center, Offset tangent,
+      double blockW, double blockH, Color color, bool isSensor) {
+    final len = math.sqrt(tangent.dx * tangent.dx + tangent.dy * tangent.dy);
+    if (len < 0.01) return;
+    // tx/ty: along spine direction; px/py: perpendicular (across vertebra)
+    final tx = tangent.dx / len, ty = tangent.dy / len;
+    final px = -ty, py = tx;
+    final hw = blockW / 2, hh = blockH / 2;
+
+    // Rounded-rect vertebral body using canvas rotation.
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(math.atan2(tangent.dy, tangent.dx) - math.pi / 2);
+    final rRect = RRect.fromRectAndRadius(
+      Rect.fromCenter(center: Offset.zero, width: blockW, height: blockH),
+      const Radius.circular(1.5),
+    );
+    canvas.drawRRect(rRect, Paint()..color = color..style = PaintingStyle.fill);
+    // Subtle top-edge highlight for a slight 3-D look.
+    canvas.drawRRect(rRect, Paint()
+      ..color = Colors.white.withValues(alpha: isSensor ? 0.40 : 0.22)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 8.0
-      ..strokeCap = StrokeCap.round;
+      ..strokeWidth = isSensor ? 1.2 : 0.7);
+    canvas.restore();
 
-    var path = Path();
-    path.moveTo(p0.dx, p0.dy);
-    path.cubicTo(p1.dx, p1.dy, p2.dx, p2.dy - totalHeight * 0.1, p2.dx, p2.dy);
-    path.cubicTo(p2.dx, p2.dy + totalHeight * 0.1, p3.dx, p3.dy, p4.dx, p4.dy);
+    // Outer ring for sensor-position blocks.
+    if (isSensor) {
+      final ex = 3.5;
+      final ring = Path()
+        ..moveTo(center.dx + px * (hw + ex) + tx * (hh + ex),
+                 center.dy + py * (hw + ex) + ty * (hh + ex))
+        ..lineTo(center.dx - px * (hw + ex) + tx * (hh + ex),
+                 center.dy - py * (hw + ex) + ty * (hh + ex))
+        ..lineTo(center.dx - px * (hw + ex) - tx * (hh + ex),
+                 center.dy - py * (hw + ex) - ty * (hh + ex))
+        ..lineTo(center.dx + px * (hw + ex) - tx * (hh + ex),
+                 center.dy + py * (hw + ex) - ty * (hh + ex))
+        ..close();
+      canvas.drawPath(ring, Paint()
+        ..color = color.withValues(alpha: 0.45)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.4);
+    }
+  }
 
-    canvas.drawPath(path, linePaint);
+  // ── Body silhouette ─────────────────────────────────────────────────────────
 
-    // Draw "Vertebrae" nodes along the path
-    var nodePaint = Paint()
-      ..color = isUpright ? primaryColor : const Color(0xFFEF4444)
+  void _drawBodySilhouette(Canvas canvas, List<Offset> pts2d,
+      bool sagittal, double scale, Rect rect) {
+    final fill = Paint()
+      ..color = const Color(0xFFD4A574).withValues(alpha: 0.11)
       ..style = PaintingStyle.fill;
-      
-    var borderPaint = Paint()
-      ..color = onSurfaceColor == Colors.white ? const Color(0xFF1E1E1E) : Colors.white
+    final stroke = Paint()
+      ..color = surfaceColor.withValues(alpha: 0.14)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5;
-
-    int numNodes = 24; 
-    
-    for (int i = 0; i <= numNodes; i++) {
-      double t = i / numNodes;
-      Offset pos = _calculateCubicBezier(t, p0, p1, p2, p3, p4, totalHeight);
-      
-      canvas.drawCircle(pos, 4.5, nodePaint);
-      canvas.drawCircle(pos, 4.5, borderPaint);
-    }
-    
-    // Draw skull indicator - smaller and more subtle
-    canvas.drawCircle(p0, 12.0, Paint()..color = onSurfaceColor.withValues(alpha: 0.2)..style = PaintingStyle.stroke..strokeWidth = 3);
-    
-    // Draw Sacrum indicator - smaller
-    var sacrumPath = Path()
-      ..moveTo(p4.dx - 12, p4.dy)
-      ..lineTo(p4.dx + 12, p4.dy)
-      ..lineTo(p4.dx, p4.dy + 24)
-      ..close();
-    canvas.drawPath(sacrumPath, Paint()..color = onSurfaceColor.withValues(alpha: 0.2)..style = PaintingStyle.stroke..strokeWidth = 3);
-  }
-  
-  Offset _calculateCubicBezier(double t, Offset p0, Offset p1, Offset p2, Offset p3, Offset p4, double h) {
-    if (t < 0.5) {
-      double localT = t * 2;
-      return _cubic(localT, p0, p1, Offset(p2.dx, p2.dy - h * 0.1), p2);
+      ..strokeWidth = 1.2;
+    if (sagittal) {
+      _drawSagittalBody(canvas, pts2d, scale, fill, stroke);
     } else {
-      double localT = (t - 0.5) * 2;
-      return _cubic(localT, p2, Offset(p2.dx, p2.dy + h * 0.1), p3, p4);
+      _drawCoronalBody(canvas, pts2d, scale, rect.width, fill, stroke);
     }
   }
-  
-  Offset _cubic(double t, Offset p0, Offset p1, Offset p2, Offset p3) {
-    double u = 1 - t;
-    double tt = t * t;
-    double uu = u * u;
-    double uuu = uu * u;
-    double ttt = tt * t;
 
-    double x = uuu * p0.dx + 3 * uu * t * p1.dx + 3 * u * tt * p2.dx + ttt * p3.dx;
-    double y = uuu * p0.dy + 3 * uu * t * p1.dy + 3 * u * tt * p2.dy + ttt * p3.dy;
-    return Offset(x, y);
+  void _drawCoronalBody(Canvas canvas, List<Offset> pts2d,
+      double scale, double panelW, Paint fill, Paint stroke) {
+    final c1  = pts2d[SpineKinematics.numLevels - 1];
+    final c7  = pts2d[SpineKinematics.idxC7];
+    final t4  = pts2d[SpineKinematics.idxT4];
+    final t12 = pts2d[SpineKinematics.idxT12];
+    final l5  = pts2d[SpineKinematics.idxL5];
+    final s1  = pts2d[0];
+
+    // Widths relative to panel half-width so they always fit.
+    final hr = panelW * 0.15;   // head radius
+    final nw = panelW * 0.07;   // neck half-width
+    final sw = panelW * 0.40;   // shoulder half-width
+    final cw = panelW * 0.30;   // chest half-width
+    final ww = panelW * 0.21;   // waist half-width
+    final hw = panelW * 0.32;   // hip half-width
+    final bw = panelW * 0.26;   // pelvis-base half-width
+
+    // Head
+    final headC = Offset(c1.dx, c1.dy - hr);
+    canvas.drawOval(
+      Rect.fromCenter(center: headC, width: hr * 2.0, height: hr * 2.2),
+      fill);
+    canvas.drawOval(
+      Rect.fromCenter(center: headC, width: hr * 2.0, height: hr * 2.2),
+      stroke);
+
+    // Neck
+    final neck = Path()
+      ..moveTo(c7.dx - nw, c7.dy)
+      ..lineTo(c7.dx - nw, headC.dy + hr)
+      ..lineTo(c7.dx + nw, headC.dy + hr)
+      ..lineTo(c7.dx + nw, c7.dy)
+      ..close();
+    canvas.drawPath(neck, fill);
+
+    // Torso (right side then mirrored left)
+    final body = Path();
+    body.moveTo(c7.dx + nw, c7.dy);
+    // right shoulder
+    body.quadraticBezierTo(c7.dx + sw * 0.6, c7.dy - 6,  c7.dx + sw,  c7.dy + 8);
+    // right armpit → chest
+    body.quadraticBezierTo(c7.dx + sw, c7.dy + (t4.dy - c7.dy) * 0.5, t4.dx + cw,  t4.dy);
+    // chest → waist
+    body.quadraticBezierTo(t12.dx + cw * 0.8, (t4.dy + t12.dy) * 0.6,  t12.dx + ww, t12.dy);
+    // waist → hip
+    body.quadraticBezierTo(l5.dx + ww * 1.1,  (t12.dy + l5.dy) * 0.5,  l5.dx + hw,  l5.dy);
+    // hip → pelvis bottom right
+    body.quadraticBezierTo(s1.dx + bw, s1.dy,  s1.dx + bw * 0.3, s1.dy + 14);
+    // crotch
+    body.quadraticBezierTo(s1.dx, s1.dy + 22, s1.dx - bw * 0.3, s1.dy + 14);
+    // left side (mirror)
+    body.quadraticBezierTo(s1.dx - bw, s1.dy,  l5.dx - hw,  l5.dy);
+    body.quadraticBezierTo(t12.dx - ww * 1.1, (t12.dy + l5.dy) * 0.5,  t12.dx - ww, t12.dy);
+    body.quadraticBezierTo(t4.dx  - cw * 0.8, (t4.dy  + t12.dy) * 0.6, t4.dx - cw,  t4.dy);
+    body.quadraticBezierTo(c7.dx - sw, c7.dy + (t4.dy - c7.dy) * 0.5,  c7.dx - sw,  c7.dy + 8);
+    body.quadraticBezierTo(c7.dx - sw * 0.6, c7.dy - 6, c7.dx - nw, c7.dy);
+    body.close();
+    canvas.drawPath(body, fill);
+    canvas.drawPath(body, stroke);
+  }
+
+  void _drawSagittalBody(Canvas canvas, List<Offset> pts2d,
+      double scale, Paint fill, Paint stroke) {
+    final c1  = pts2d[SpineKinematics.numLevels - 1];
+    final c7  = pts2d[SpineKinematics.idxC7];
+    final t4  = pts2d[SpineKinematics.idxT4];
+    final t12 = pts2d[SpineKinematics.idxT12];
+    final l5  = pts2d[SpineKinematics.idxL5];
+    final s1  = pts2d[0];
+
+    // Anterior-posterior offsets relative to spine chain height.
+    final backOff  = scale * 0.05;   // posterior surface behind spine
+    final chestOff = scale * 0.11;   // chest protrudes forward from T4
+    final abdOff   = scale * 0.08;   // abdomen at T12/L5
+    final pelOff   = scale * 0.06;   // pelvis front
+
+    final hr = scale * 0.08;
+    final headC = Offset(c1.dx + scale * 0.015, c1.dy - hr);
+
+    // Head
+    canvas.drawOval(
+      Rect.fromCenter(center: headC, width: hr * 1.8, height: hr * 2.1), fill);
+    canvas.drawOval(
+      Rect.fromCenter(center: headC, width: hr * 1.8, height: hr * 2.1), stroke);
+
+    // Torso: posterior side going down, then anterior side coming up.
+    final body = Path();
+    // --- posterior (back surface) ---
+    body.moveTo(c7.dx - backOff, headC.dy + hr);
+    body.quadraticBezierTo(
+      c7.dx - backOff * 1.2, (c7.dy + t4.dy) / 2,
+      t4.dx - backOff, t4.dy);
+    body.quadraticBezierTo(
+      t12.dx - backOff * 0.9, (t4.dy + t12.dy) / 2,
+      t12.dx - backOff, t12.dy);
+    body.quadraticBezierTo(          // lumbar lordosis curve
+      l5.dx - backOff * 1.3, (t12.dy + l5.dy) / 2,
+      l5.dx - backOff, l5.dy);
+    body.quadraticBezierTo(          // buttock
+      s1.dx - backOff * 0.8, s1.dy + 4,
+      s1.dx, s1.dy + 16);
+    // --- anterior (front surface) ---
+    body.quadraticBezierTo(
+      s1.dx + pelOff * 1.2, s1.dy + 10,
+      l5.dx + pelOff, l5.dy);
+    body.quadraticBezierTo(
+      t12.dx + abdOff, (l5.dy + t12.dy) / 2,
+      t12.dx + abdOff, t12.dy);
+    body.quadraticBezierTo(          // chest bulge
+      t4.dx + chestOff * 1.05, (t12.dy + t4.dy) / 2,
+      t4.dx + chestOff, t4.dy);
+    body.quadraticBezierTo(
+      c7.dx + chestOff * 0.7, (t4.dy + c7.dy) / 2,
+      c7.dx + scale * 0.03, c7.dy);
+    body.quadraticBezierTo(          // neck front
+      c7.dx + scale * 0.025, (c7.dy + headC.dy + hr) / 2,
+      headC.dx - hr * 0.1, headC.dy + hr);
+    body.close();
+    canvas.drawPath(body, fill);
+    canvas.drawPath(body, stroke);
+  }
+
+  // Color gradient: sacrum grey → lumbar red → thoracic yellow → cervical blue.
+  Color _levelColor(int level) {
+    if (level == 0) return const Color(0xFF6B7280);
+    if (level <= SpineKinematics.idxL5) return const Color(0xFFEF4444);
+    if (level <= SpineKinematics.idxT12) {
+      return Color.lerp(
+          const Color(0xFFEF4444), const Color(0xFFF59E0B),
+          (level - SpineKinematics.idxL5) / (SpineKinematics.idxT12 - SpineKinematics.idxL5))!;
+    }
+    if (level <= SpineKinematics.idxT4) {
+      return Color.lerp(
+          const Color(0xFFF59E0B), const Color(0xFF06B6D4),
+          (level - SpineKinematics.idxT12) / (SpineKinematics.idxT4 - SpineKinematics.idxT12))!;
+    }
+    if (level <= SpineKinematics.idxC7) {
+      return Color.lerp(
+          const Color(0xFF06B6D4), const Color(0xFF3B82F6),
+          (level - SpineKinematics.idxT4) / (SpineKinematics.idxC7 - SpineKinematics.idxT4))!;
+    }
+    return const Color(0xFF3B82F6);
+  }
+
+  void _drawLabel(Canvas canvas, Offset pos, String text, Rect panel, bool sagittal) {
+    final tp = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: TextStyle(
+          color: surfaceColor.withValues(alpha: 0.55),
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.5,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    // Place label to the right of the node, flip to left if near right edge.
+    double lx = pos.dx + 10;
+    if (lx + tp.width > panel.right - 4) lx = pos.dx - tp.width - 10;
+
+    tp.paint(canvas, Offset(lx, pos.dy - tp.height / 2));
+  }
+
+  void _drawPanelTitle(Canvas canvas, Rect rect, String title, String sub) {
+    final tp = TextPainter(
+      text: TextSpan(
+        children: [
+          TextSpan(
+            text: '$title\n',
+            style: TextStyle(
+              color: surfaceColor.withValues(alpha: 0.45),
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.2,
+            ),
+          ),
+          TextSpan(
+            text: sub,
+            style: TextStyle(
+              color: surfaceColor.withValues(alpha: 0.25),
+              fontSize: 9,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+      textDirection: TextDirection.ltr,
+      textAlign: TextAlign.center,
+    )..layout(maxWidth: rect.width);
+
+    tp.paint(canvas, Offset(rect.left + (rect.width - tp.width) / 2, rect.top + 8));
   }
 
   @override
-  bool shouldRepaint(covariant SpinePainter oldDelegate) {
-    return oldDelegate.cervicalAngle != cervicalAngle || 
-           oldDelegate.thoracicAngle != thoracicAngle ||
-           oldDelegate.isUpright != isUpright ||
-           oldDelegate.primaryColor != primaryColor ||
-           oldDelegate.onSurfaceColor != onSurfaceColor;
-  }
+  bool shouldRepaint(covariant SpinePainter old) =>
+      old.points != points || old.breatheScale != breatheScale;
 }

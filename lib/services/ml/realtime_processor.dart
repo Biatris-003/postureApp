@@ -45,6 +45,12 @@ class RealtimeProcessor {
   final _predController = StreamController<PredictionResult>.broadcast();
   Stream<PredictionResult> get predictions => _predController.stream;
 
+  // Emits per-sensor raw quaternions [q0,q1,q2,q3] on every 4-sensor sync.
+  // Used by SpineViewTab for live spine visualization without going through
+  // the full ML preprocessing pipeline.
+  final _quatController = StreamController<Map<String, List<double>>>.broadcast();
+  Stream<Map<String, List<double>>> get latestQuats => _quatController.stream;
+
   // Sensor label → latest row for that sensor in this "sync round"
   final Map<String, Map<String, double>> _latest = {};
   // All 4-sensor synced wide rows
@@ -87,6 +93,7 @@ class RealtimeProcessor {
   void dispose() {
     stop();
     _predController.close();
+    _quatController.close();
     _bleReceiver?.dispose();
     _predictor?.dispose();
   }
@@ -107,6 +114,20 @@ class RealtimeProcessor {
     }
     _buffer.add(merged);
     _latest.clear(); // reset for next sync round
+
+    // Emit raw quaternions for spine visualization on every sync.
+    if (!_quatController.isClosed) {
+      final quats = <String, List<double>>{};
+      for (final s in _sensorOrder) {
+        quats[s] = [
+          merged['${s}_Quaternions 0()'] ?? 1.0,
+          merged['${s}_Quaternions 1()'] ?? 0.0,
+          merged['${s}_Quaternions 2()'] ?? 0.0,
+          merged['${s}_Quaternions 3()'] ?? 0.0,
+        ];
+      }
+      _quatController.add(quats);
+    }
 
     _syncedSinceLastInfer++;
 
