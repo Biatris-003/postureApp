@@ -4,7 +4,7 @@ class Exercise {
   String description;
   final String reps;
   final String sets;
-  final String duration;        // ← add this
+  final String duration;        
   final String difficultyLevel;
   final String iconCode;
   final String imageUrl;
@@ -16,7 +16,7 @@ class Exercise {
     required this.description,
     required this.reps,
     required this.sets,
-    required this.duration,     // ← add this
+    required this.duration,     
     required this.difficultyLevel,
     required this.iconCode,
     required this.imageUrl,
@@ -28,7 +28,7 @@ class Exercise {
     String? description,
     String? reps,
     String? sets,
-    String? duration,           // ← add this
+    String? duration,          
     String? difficultyLevel,
     String? imageUrl,
     String? videoAssetPath,
@@ -39,7 +39,7 @@ class Exercise {
       description: description ?? this.description,
       reps: reps ?? this.reps,
       sets: sets ?? this.sets,
-      duration: duration ?? this.duration,   // ← add this
+      duration: duration ?? this.duration,   
       difficultyLevel: difficultyLevel ?? this.difficultyLevel,
       iconCode: iconCode,
       imageUrl: imageUrl ?? this.imageUrl,

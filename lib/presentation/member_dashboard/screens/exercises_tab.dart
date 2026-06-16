@@ -6,6 +6,7 @@ import '../../../data/datasources/exercise_recommendation_service.dart';
 import '../../../domain/entities/exercises/exercise.dart';
 import 'exercise_detail_screen.dart';
 import 'statistics_tab.dart';
+import 'rula_assessment_screen.dart';
 
 class ExercisesTab extends ConsumerWidget {
   const ExercisesTab({Key? key}) : super(key: key);
@@ -20,13 +21,8 @@ class ExercisesTab extends ConsumerWidget {
     final recommendedExercises =
         recommendationService.getRecommendedExercisesFromCounts(postureCountMap);
 
-    // final mappedExercises = ref.watch(exerciseProvider);
-    // final defaultExercises = mappedExercises[uid] ?? [];
-
     final mappedExercises = ref.watch(exerciseProvider);
     final defaultExercises = mappedExercises[userId] ?? [];
-    // final List<Exercise> exercises =
-    //     recommendedExercises.isNotEmpty ? recommendedExercises : defaultExercises;
 
     final List<Exercise> exercises = defaultExercises;
     if (exercises.isEmpty) {
@@ -51,14 +47,30 @@ class ExercisesTab extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Your Plan',
-                    style: TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.5,
-                      color: Theme.of(context).colorScheme.onSurface,
-                    ),
+                  // ── Title row with Assessment button ─────────────────
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Your Plan',
+                          style: TextStyle(
+                            fontSize: 32,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.5,
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
+                        ),
+                      ),
+                      _AssessmentButton(
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const RulaAssessmentScreen(),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   if (recommendedExercises.isNotEmpty)
                     Padding(
@@ -139,20 +151,18 @@ class ExercisesTab extends ConsumerWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // ── Background image ─────────────────────────────────────
               Hero(
-                    tag: 'exercise_image_${exercise.id}',
-                    child: ColoredBox(
-                      color: Colors.white,
-                      child: Image.asset(
-                        exercise.imageUrl,
-                        fit: BoxFit.contain,
-                        errorBuilder: (context, error, stackTrace) =>
-                            _buildErrorPlaceholder(context),
-                      ),
-                    ),
+                tag: 'exercise_image_${exercise.id}',
+                child: ColoredBox(
+                  color: Colors.white,
+                  child: Image.asset(
+                    exercise.imageUrl,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) =>
+                        _buildErrorPlaceholder(context),
                   ),
-              // ── Dark gradient overlay ─────────────────────────────────
+                ),
+              ),
               Container(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
@@ -166,7 +176,6 @@ class ExercisesTab extends ConsumerWidget {
                   ),
                 ),
               ),
-              // ── Difficulty badge (top-right) ──────────────────────────
               Positioned(
                 top: 16,
                 right: 16,
@@ -188,7 +197,6 @@ class ExercisesTab extends ConsumerWidget {
                   ),
                 ),
               ),
-              // ── Bottom content ────────────────────────────────────────
               Padding(
                 padding: const EdgeInsets.all(20.0),
                 child: Column(
@@ -216,10 +224,8 @@ class ExercisesTab extends ConsumerWidget {
                       ),
                     ),
                     const SizedBox(height: 14),
-                    // ── Reps / Sets / Duration row ────────────────────
                     Row(
                       children: [
-                        // Reps
                         Icon(Icons.repeat_rounded,
                             color: Colors.white.withValues(alpha: 0.85),
                             size: 16),
@@ -233,7 +239,6 @@ class ExercisesTab extends ConsumerWidget {
                           ),
                         ),
                         const SizedBox(width: 14),
-                        // Sets
                         Icon(Icons.layers_rounded,
                             color: Colors.white.withValues(alpha: 0.85),
                             size: 16),
@@ -247,7 +252,6 @@ class ExercisesTab extends ConsumerWidget {
                           ),
                         ),
                         const SizedBox(width: 14),
-                        // Duration
                         Icon(Icons.timer_outlined,
                             color: Colors.white.withValues(alpha: 0.85),
                             size: 16),
@@ -261,7 +265,6 @@ class ExercisesTab extends ConsumerWidget {
                           ),
                         ),
                         const Spacer(),
-                        // Arrow button
                         Container(
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
@@ -290,9 +293,51 @@ class ExercisesTab extends ConsumerWidget {
       color: Theme.of(context).cardColor,
       child: Icon(
         Icons.image_not_supported_rounded,
-        color:
-            Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
+        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
         size: 40,
+      ),
+    );
+  }
+}
+
+// ── Assessment button widget ───────────────────────────────────────────────────
+class _AssessmentButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _AssessmentButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+        decoration: BoxDecoration(
+          color: const Color(0xFF6C63FF),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF6C63FF).withValues(alpha: 0.35),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            Icon(Icons.accessibility_new_rounded, color: Colors.white, size: 16),
+            SizedBox(width: 6),
+            Text(
+              'Assessment',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.2,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

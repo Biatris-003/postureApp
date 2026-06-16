@@ -23,7 +23,7 @@ class ExerciseModel extends Exercise {
     String? description,
     String? reps,
     String? sets,
-    String? duration,               // ← add this
+    String? duration,               
     String? difficultyLevel,
     String? imageUrl,
     String? videoAssetPath,
@@ -35,7 +35,7 @@ class ExerciseModel extends Exercise {
       description: description ?? this.description,
       reps: reps ?? this.reps,
       sets: sets ?? this.sets,
-      duration: duration ?? this.duration,   // ← add this
+      duration: duration ?? this.duration,   
       difficultyLevel: difficultyLevel ?? this.difficultyLevel,
       iconCode: iconCode,
       imageUrl: imageUrl ?? this.imageUrl,
