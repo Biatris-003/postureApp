@@ -19,6 +19,14 @@ let repCount        = 0;
 let phase           = 'start';
 let poseReady       = false;
 
+// ── Post rep count to Flutter ──────────────────────────
+// Safe to call even if the JavaScript channel isn't set up.
+function sendRepCount() {
+  if (window.RepCounter) {
+    window.RepCounter.postMessage(repCount.toString());
+  }
+}
+
 // ── EMA angle smoother ──────────────────────────
 // Reduces MediaPipe jitter so angles don't fire thresholds on noise spikes.
 // alpha=0.25: each frame contributes 25% of new reading, 75% is the running average.
@@ -144,6 +152,9 @@ async function startExercise(ex) {
   setFeedback([{ msg: 'Get into position to begin', type: 'neutral' }]);
   clearAngles();
 
+  // ── Send initial rep count (0) to Flutter ──
+  sendRepCount();
+
   document.getElementById('screen-select').classList.remove('active');
   document.getElementById('screen-coach').classList.add('active');
 
@@ -257,6 +268,7 @@ function processExercise(lm, ctx, canvas) {
     if (newCount > repCount) {
       repCount = newCount;
       document.getElementById('rep-count').textContent = repCount;
+      sendRepCount();   // <── NEW: post updated count
     }
 
   } else if (ex.id === 'circumduction') {
@@ -294,6 +306,7 @@ function processExercise(lm, ctx, canvas) {
       document.getElementById('rep-count').textContent = repCount;
       setPhaseLabel('up');
       setFeedback([{ msg: 'Full circle completed!', type: 'good' }]);
+      sendRepCount();   // <── NEW
     } else {
       setPhaseLabel('down');
     }
@@ -310,6 +323,7 @@ function processExercise(lm, ctx, canvas) {
         repCount++;
         document.getElementById('rep-count').textContent = repCount;
         setPhaseLabel('up');
+        sendRepCount();   // <── NEW
       }
     } else {
       if (phase === 'start' && repAngle < ex.downAngle) {

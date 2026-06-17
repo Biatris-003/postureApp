@@ -8,6 +8,8 @@ import 'exercise_detail_screen.dart';
 import 'statistics_tab.dart';
 import 'rula_assessment_screen.dart';
 import 'weekly_assessment_screen.dart';
+import '../../../utils/exercise_constants.dart'; // NEW import
+import '../../../providers/exercise_progress_provider.dart'; // NEW import
 
 class ExercisesTab extends ConsumerWidget {
   const ExercisesTab({Key? key}) : super(key: key);
@@ -39,12 +41,16 @@ class ExercisesTab extends ConsumerWidget {
     final String userId = currentUser?.userId ?? 'unknown';
 
     final postureCountMap = postureCountsCache;
-    final recommendationService = ref.watch(exerciseRecommendationServiceProvider);
+    final recommendationService =
+        ref.watch(exerciseRecommendationServiceProvider);
     final recommendedExercises =
         recommendationService.getRecommendedExercisesFromCounts(postureCountMap);
 
     final mappedExercises = ref.watch(exerciseProvider);
     final defaultExercises = mappedExercises[userId] ?? [];
+
+    // ─── NEW: read progress ──────────────────────────────────
+    final progress = ref.watch(exerciseProgressNotifierProvider);
 
     final List<Exercise> exercises = defaultExercises;
     if (exercises.isEmpty) {
@@ -53,7 +59,10 @@ class ExercisesTab extends ConsumerWidget {
           'No exercises assigned currently.',
           style: TextStyle(
             fontSize: 16,
-            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+            color: Theme.of(context)
+                .colorScheme
+                .onSurface
+                .withValues(alpha: 0.5),
           ),
         ),
       );
@@ -105,7 +114,8 @@ class ExercisesTab extends ConsumerWidget {
                             onTap: () => Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) => const WeeklyAssessmentScreen(),
+                                builder: (_) =>
+                                    const WeeklyAssessmentScreen(),
                               ),
                             ),
                           ),
@@ -140,7 +150,7 @@ class ExercisesTab extends ConsumerWidget {
                   final exercise = exercises[index];
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 24),
-                    child: _buildExerciseCard(context, exercise),
+                    child: _buildExerciseCard(context, exercise, progress),
                   );
                 },
                 childCount: exercises.length,
@@ -178,13 +188,27 @@ class ExercisesTab extends ConsumerWidget {
     }
   }
 
-  Widget _buildExerciseCard(BuildContext context, Exercise exercise) {
+  Widget _buildExerciseCard(
+      BuildContext context, Exercise exercise, Map<String, int> progress) {
     final diffColor = _difficultyColor(exercise.difficultyLevel);
     final timerLabel = _calculateTotalTimer(
       exercise.reps,
       exercise.sets,
       exercise.title,
     );
+
+    // ─── Determine if this exercise is tracked ──────────────────
+    final isTracked = trackedExerciseTitles.contains(exercise.title);
+    String repsDisplay = '${_clean(exercise.reps)}×${_clean(exercise.sets)} Reps';
+    if (isTracked) {
+      final coachId = exerciseTitleToCoachId[exercise.title];
+      if (coachId != null) {
+        final completedReps = progress[coachId];
+        if (completedReps != null && completedReps > 0) {
+          repsDisplay = '$completedReps reps done';
+        }
+      }
+    }
 
     return GestureDetector(
       onTap: () {
@@ -238,7 +262,6 @@ class ExercisesTab extends ConsumerWidget {
                   ),
                 ),
               ),
-
               Positioned(
                 top: 16,
                 right: 16,
@@ -248,7 +271,6 @@ class ExercisesTab extends ConsumerWidget {
                   color: diffColor,
                 ),
               ),
-
               Padding(
                 padding: const EdgeInsets.all(20.0),
                 child: Column(
@@ -277,8 +299,7 @@ class ExercisesTab extends ConsumerWidget {
                                 children: [
                                   _buildTopPill(
                                     icon: Icons.repeat_rounded,
-                                    label:
-                                        '${_clean(exercise.reps)}×${_clean(exercise.sets)} Reps',
+                                    label: repsDisplay, // ← dynamic
                                   ),
                                   const SizedBox(width: 8),
                                   _buildTopPill(

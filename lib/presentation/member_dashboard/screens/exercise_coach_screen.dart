@@ -1,40 +1,43 @@
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../utils/exercise_constants.dart';
+import '../../../providers/exercise_progress_provider.dart';
 
 /// Maps exercise titles (lowercase) → coach exercise IDs in exercises.js
-const Map<String, String> _exerciseCoachIds = {
-  'circumduction': 'circumduction',
-  'squatting': 'squat',
-  'side bending (right)': 'side_bend_right',
-  'sit to stand': 'sit_to_stand',
-};
+/// Now uses the global map from exercise_constants.dart
 
-/// Returns the coach ID for a given exercise title, or null if not supported.
-String? coachIdForTitle(String title) =>
-    _exerciseCoachIds[title.toLowerCase().trim()];
-
-class ExerciseCoachScreen extends StatefulWidget {
+class ExerciseCoachScreen extends ConsumerStatefulWidget {
   final String exerciseTitle;
-  const ExerciseCoachScreen({super.key, required this.exerciseTitle});
+  final bool trackReps; // NEW: whether to save reps
+
+  const ExerciseCoachScreen({
+    super.key,
+    required this.exerciseTitle,
+    this.trackReps = false,
+  });
 
   @override
-  State<ExerciseCoachScreen> createState() => _ExerciseCoachScreenState();
+  ConsumerState<ExerciseCoachScreen> createState() =>
+      _ExerciseCoachScreenState();
 }
 
-class _ExerciseCoachScreenState extends State<ExerciseCoachScreen> {
+class _ExerciseCoachScreenState extends ConsumerState<ExerciseCoachScreen>
+    with SingleTickerProviderStateMixin {
   late final WebViewController _controller;
   bool _permissionGranted = false;
   bool _permissionDenied = false;
   bool _webViewReady = false;
+  int _completedReps = 0; // NEW: holds the latest rep count from JS
+
+  String? get _coachId => exerciseTitleToCoachId[widget.exerciseTitle];
 
   @override
   void initState() {
     super.initState();
     _requestCameraAndInit();
   }
-
-  String? get _coachId => coachIdForTitle(widget.exerciseTitle);
 
   Future<void> _requestCameraAndInit() async {
     final status = await Permission.camera.request();
@@ -48,7 +51,7 @@ class _ExerciseCoachScreenState extends State<ExerciseCoachScreen> {
   }
 
   void _initWebView() {
-    _controller = WebViewController(
+    var controller = WebViewController(
       onPermissionRequest: (request) => request.grant(),
     )
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
@@ -56,6 +59,21 @@ class _ExerciseCoachScreenState extends State<ExerciseCoachScreen> {
         onPageFinished: (_) => _autoStartExercise(),
       ))
       ..loadFlutterAsset('assets/exercise-coach/index.html');
+
+    // ─── Add JavaScript channel only if tracking reps ───
+    if (widget.trackReps) {
+      controller.addJavaScriptChannel(
+        'RepCounter',
+        onMessageReceived: (JavaScriptMessage message) {
+          final int reps = int.tryParse(message.message) ?? 0;
+          if (mounted) {
+            setState(() => _completedReps = reps);
+          }
+        },
+      );
+    }
+
+    _controller = controller;
   }
 
   Future<void> _autoStartExercise() async {
@@ -75,29 +93,53 @@ class _ExerciseCoachScreenState extends State<ExerciseCoachScreen> {
     );
   }
 
+  // ─── Save reps and pop ──────────────────────────────────────────
+  Future<void> _saveAndPop() async {
+    if (widget.trackReps && _completedReps > 0 && _coachId != null) {
+      final notifier = ref.read(exerciseProgressNotifierProvider.notifier);
+      await notifier.saveProgress(_coachId!, _completedReps);
+    }
+    if (mounted) Navigator.pop(context);
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
+    return WillPopScope(
+      onWillPop: () async {
+        await _saveAndPop();
+        return false; // we already popped
+      },
+      child: Scaffold(
         backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        title: Text(
-          widget.exerciseTitle,
-          style: const TextStyle(
-            fontWeight: FontWeight.w700,
-            color: Colors.white,
-            fontSize: 18,
+        appBar: AppBar(
+          backgroundColor: Colors.black,
+          foregroundColor: Colors.white,
+          title: Text(
+            widget.exerciseTitle,
+            style: const TextStyle(
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+              fontSize: 18,
+            ),
           ),
+          elevation: 0,
+          actions: [
+            // ─── Finish button only when tracking ───
+            if (widget.trackReps)
+              IconButton(
+                icon: const Icon(Icons.check_circle_outline_rounded),
+                onPressed: _saveAndPop,
+                tooltip: 'Finish & save reps',
+              ),
+          ],
         ),
-        elevation: 0,
+        body: _buildBody(),
       ),
-      body: _buildBody(),
     );
   }
 
   Widget _buildBody() {
-    // ── Permission Denied ──────────────────────────────────────────────────
+    // ── Permission Denied ──────────────────────────────────────────
     if (_permissionDenied) {
       return Center(
         child: Padding(
@@ -150,7 +192,7 @@ class _ExerciseCoachScreenState extends State<ExerciseCoachScreen> {
       );
     }
 
-    // ── Requesting Permission ──────────────────────────────────────────────
+    // ── Requesting Permission ──────────────────────────────────────
     if (!_permissionGranted) {
       return const Center(
         child: Column(
@@ -167,7 +209,7 @@ class _ExerciseCoachScreenState extends State<ExerciseCoachScreen> {
       );
     }
 
-    // ── WebView (with loading overlay) ─────────────────────────────────────
+    // ── WebView (with loading overlay) ─────────────────────────────
     return Stack(
       children: [
         WebViewWidget(controller: _controller),

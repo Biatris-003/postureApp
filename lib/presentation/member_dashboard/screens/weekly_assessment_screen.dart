@@ -6,6 +6,8 @@ import '../../../data/datasources/exercise_recommendation_service.dart';
 import '../../../domain/entities/exercises/exercise.dart';
 import 'exercise_detail_screen.dart';
 import 'statistics_tab.dart';
+import 'exercise_coach_screen.dart';
+import '../../../utils/exercise_constants.dart'; // <-- new import
 
 class WeeklyAssessmentScreen extends ConsumerWidget {
   const WeeklyAssessmentScreen({Key? key}) : super(key: key);
@@ -111,14 +113,17 @@ class WeeklyAssessmentScreen extends ConsumerWidget {
   Widget _buildExerciseCard(BuildContext context, Exercise exercise) {
     final diffColor = _difficultyColor(exercise.difficultyLevel);
 
+    // Determine if this exercise is one of the four that can track reps
+    final isTracked = trackedExerciseTitles.contains(exercise.title);
+
     return GestureDetector(
       onTap: () {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => ExerciseDetailScreen(
-              exercise: exercise,
-              heroTag: 'weekly_exercise_image_${exercise.id}',
+            builder: (context) => ExerciseCoachScreen(
+              exerciseTitle: exercise.title,
+              trackReps: isTracked, // <-- pass flag
             ),
           ),
         );
