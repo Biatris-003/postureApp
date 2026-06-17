@@ -29,8 +29,9 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     'Cat-Cow': [
       'Start on all fours with your hands under your shoulders and knees under your hips.',
       'For the Cat: exhale and round your spine toward the ceiling, letting your head and tailbone drop.',
+      'Hold briefly for 2 seconds.',
       'For the Cow: inhale and let your belly drop toward the floor, lifting your chest and tailbone.',
-      'Move slowly and smoothly between the two positions, following your breath.',
+      'Hold briefly for 2 seconds, then continue moving slowly between both positions.',
     ],
     'Chest Stretch': [
       'Stand facing a doorway or open wall, feet shoulder-width apart.',
@@ -73,7 +74,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
       'Place your left forearm on the floor, elbow directly beneath your shoulder.',
       'Lift your hips off the floor until your body forms a straight diagonal line from head to feet.',
       'Keep your core braced and avoid letting your hips sag or rotate.',
-      'Hold the position for the full duration, then lower with control.',
+      'Hold for as long as you can while maintaining correct form, then lower with control.',
     ],
     'Leg Lift': [
       'Lie flat on your back with your legs straight and arms resting by your sides.',
@@ -83,11 +84,8 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
       'Stop just before your feet touch the floor to maintain tension, then repeat.',
     ],
     'Micro Break Walking': [
-      'Stand up from your seat and find a clear path to walk.',
-      'Walk at a comfortable, relaxed pace with your head up and shoulders back.',
-      'Swing your arms naturally as you walk and take full, deep breaths.',
-      'Use this time to step away from your screen and let your eyes and body recover.',
-      'Return to your seat feeling refreshed after the walk.',
+      'Stand up from your desk.',
+      'Walk at a comfortable, relaxed pace with your head up and shoulders back for the full timer duration shown above.',
     ],
     'Neck Rotation': [
       'Sit or stand tall with your shoulders relaxed and your gaze forward.',
@@ -101,7 +99,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
       'Curl your toes under and lift your body off the floor, forming a straight line from head to heels.',
       'Engage your core, squeeze your glutes, and keep your hips level — do not let them sag or rise.',
       'Keep your neck neutral and gaze slightly ahead of your hands.',
-      'Hold this position for the full duration.',
+      'Hold for as long as you can while maintaining correct form, then lower with control.',
     ],
     'Right Side Leg Raise': [
       'Lie on your right side with your legs stacked straight on top of each other.',
@@ -111,11 +109,11 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
       'Hold briefly at the top for 2 seconds, then lower with control back to the starting position.',
     ],
     'Side Bending Right': [
-      'Stand tall with your feet shoulder-width apart and arms relaxed at your sides.',
-      'Raise your right arm overhead, keeping it close to your ear.',
-      'Slowly bend your torso to the right, sliding your left hand down your left leg.',
-      'Hold the stretch for 20 seconds at the point of comfortable tension, feeling the lengthening through your left side.',
-      'Return to the upright position with control, then repeat.',
+      'Stand tall with your feet shoulder-width apart and your right arm relaxed by your side.',
+      'Raise your left arm upward and slightly over your head at a comfortable angle.',
+      'Slowly bend your upper body to the right, letting your right hand slide gently down your right side.',
+      'Keep your chest open, your shoulders relaxed, and avoid twisting your torso.',
+      'Hold the side stretch for 20 seconds, then return to the upright position with control.',
     ],
     'Sit to Stand': [
       'Sit upright near the edge of your chair with your feet flat on the floor, hip-width apart.',
@@ -150,12 +148,11 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
 
   static const Map<String, String> _holdDurations = {
     'Bird Dog': '3 sec',
+    'Cat-Cow': '2 sec',
     'Chest Stretch': '30 sec',
     'Glute Bridge': '2 sec',
     'Hip Flexor Stretch': '30 sec',
-    'Left Side Plank': 'Full set',
     'Neck Rotation': '2 sec',
-    'Plank': 'Full set',
     'Right Side Leg Raise': '2 sec',
     'Side Bending Right': '20 sec',
     'Thoracic Back Extension': '5 sec',
@@ -389,7 +386,6 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
               onPressed: () => Navigator.of(context).pop(),
             ),
           ),
-
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
@@ -406,7 +402,6 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-
                   Row(
                     children: [
                       _buildStatPill(
@@ -424,9 +419,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                       ],
                     ],
                   ),
-
                   const SizedBox(height: 36),
-
                   Text(
                     'Instructions',
                     style: TextStyle(
@@ -438,9 +431,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                   ),
                   const SizedBox(height: 16),
                   ..._buildInstructionSteps(context, _getInstructions()),
-
                   const SizedBox(height: 40),
-
                   Text(
                     'Exercise Demo',
                     style: TextStyle(
@@ -606,12 +597,6 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                         color: Colors.white.withValues(alpha: 0.9),
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
-                        shadows: [
-                          Shadow(
-                            color: Colors.black.withValues(alpha: 0.5),
-                            blurRadius: 8,
-                          ),
-                        ],
                       ),
                     ),
                   ],
