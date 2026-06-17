@@ -99,16 +99,6 @@ class ExercisesTab extends ConsumerWidget {
                         alignment: WrapAlignment.end,
                         children: [
                           _AssessmentButton(
-                            label: 'Assessment',
-                            icon: Icons.accessibility_new_rounded,
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const RulaAssessmentScreen(),
-                              ),
-                            ),
-                          ),
-                          _AssessmentButton(
                             label: 'Weekly Assessment',
                             icon: Icons.calendar_month_rounded,
                             onTap: () => Navigator.push(
