@@ -5,7 +5,13 @@ import '../../../domain/entities/exercises/exercise.dart';
 
 class ExerciseDetailScreen extends StatefulWidget {
   final Exercise exercise;
-  const ExerciseDetailScreen({super.key, required this.exercise});
+  final String? heroTag;
+
+  const ExerciseDetailScreen({
+    super.key,
+    required this.exercise,
+    this.heroTag,
+  });
 
   @override
   State<ExerciseDetailScreen> createState() => _ExerciseDetailScreenState();
@@ -94,7 +100,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                 ),
               ),
               background: Hero(
-                tag: 'exercise_image_${widget.exercise.id}',
+                tag: widget.heroTag ?? 'exercise_image_${widget.exercise.id}',
                 child: Stack(
                   fit: StackFit.expand,
                   children: [

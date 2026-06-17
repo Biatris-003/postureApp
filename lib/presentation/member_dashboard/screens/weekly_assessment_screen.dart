@@ -6,11 +6,9 @@ import '../../../data/datasources/exercise_recommendation_service.dart';
 import '../../../domain/entities/exercises/exercise.dart';
 import 'exercise_detail_screen.dart';
 import 'statistics_tab.dart';
-import 'rula_assessment_screen.dart';
-import 'weekly_assessment_screen.dart';
 
-class ExercisesTab extends ConsumerWidget {
-  const ExercisesTab({Key? key}) : super(key: key);
+class WeeklyAssessmentScreen extends ConsumerWidget {
+  const WeeklyAssessmentScreen({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -26,34 +24,32 @@ class ExercisesTab extends ConsumerWidget {
     final defaultExercises = mappedExercises[userId] ?? [];
 
     final List<Exercise> exercises = defaultExercises;
-    if (exercises.isEmpty) {
-      return Center(
-        child: Text(
-          'No exercises assigned currently.',
-          style: TextStyle(
-            fontSize: 16,
-            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
-          ),
-        ),
-      );
-    }
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: CustomScrollView(
-        slivers: [
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(24, 32, 24, 16),
-            sliver: SliverToBoxAdapter(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // ── Title row with assessment buttons ────────────────
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Expanded(
-                        child: Text(
+      appBar: AppBar(
+        title: const Text('Weekly Assessment'),
+        centerTitle: true,
+      ),
+      body: exercises.isEmpty
+          ? Center(
+              child: Text(
+                'No exercises assigned currently.',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                ),
+              ),
+            )
+          : CustomScrollView(
+              slivers: [
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
+                  sliver: SliverToBoxAdapter(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
                           'Your Plan',
                           style: TextStyle(
                             fontSize: 32,
@@ -62,72 +58,42 @@ class ExercisesTab extends ConsumerWidget {
                             color: Theme.of(context).colorScheme.onSurface,
                           ),
                         ),
-                      ),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        alignment: WrapAlignment.end,
-                        children: [
-                          _AssessmentButton(
-                            label: 'Assessment',
-                            icon: Icons.accessibility_new_rounded,
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const RulaAssessmentScreen(),
+                        if (recommendedExercises.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8.0),
+                            child: Text(
+                              'Based on your posture patterns',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurface
+                                    .withValues(alpha: 0.6),
+                                fontStyle: FontStyle.italic,
                               ),
                             ),
                           ),
-                          _AssessmentButton(
-                            label: 'Weekly Assessment',
-                            icon: Icons.calendar_month_rounded,
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const WeeklyAssessmentScreen(),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  if (recommendedExercises.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8.0),
-                      child: Text(
-                        'Based on your posture patterns',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withValues(alpha: 0.6),
-                          fontStyle: FontStyle.italic,
-                        ),
-                      ),
+                      ],
                     ),
-                ],
-              ),
+                  ),
+                ),
+                SliverPadding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final exercise = exercises[index];
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 24),
+                          child: _buildExerciseCard(context, exercise),
+                        );
+                      },
+                      childCount: exercises.length,
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ),
-          SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-            sliver: SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final exercise = exercises[index];
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 24),
-                    child: _buildExerciseCard(context, exercise),
-                  );
-                },
-                childCount: exercises.length,
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -150,7 +116,10 @@ class ExercisesTab extends ConsumerWidget {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => ExerciseDetailScreen(exercise: exercise),
+            builder: (context) => ExerciseDetailScreen(
+              exercise: exercise,
+              heroTag: 'weekly_exercise_image_${exercise.id}',
+            ),
           ),
         );
       },
@@ -172,7 +141,7 @@ class ExercisesTab extends ConsumerWidget {
             fit: StackFit.expand,
             children: [
               Hero(
-                tag: 'exercise_image_${exercise.id}',
+                tag: 'weekly_exercise_image_${exercise.id}',
                 child: ColoredBox(
                   color: Colors.white,
                   child: Image.asset(
@@ -315,56 +284,6 @@ class ExercisesTab extends ConsumerWidget {
         Icons.image_not_supported_rounded,
         color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
         size: 40,
-      ),
-    );
-  }
-}
-
-// ── Assessment button widget ───────────────────────────────────────────────────
-class _AssessmentButton extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  const _AssessmentButton({
-    required this.label,
-    required this.icon,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-        decoration: BoxDecoration(
-          color: const Color(0xFF6C63FF),
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF6C63FF).withValues(alpha: 0.35),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: Colors.white, size: 16),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 0.2,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

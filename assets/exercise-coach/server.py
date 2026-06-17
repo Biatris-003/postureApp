@@ -24,7 +24,7 @@ class ReusableHTTPServer(socketserver.TCPServer):
     allow_reuse_address = True  # Allow immediate port reuse
 
 def open_browser():
-    webbrowser.open(f'http://localhost:{PORT}')
+    webbrowser.open(f'http://localhost:{PORT}/index.html')
 
 print(f"""
 ╔══════════════════════════════════════╗
