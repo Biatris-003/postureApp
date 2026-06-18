@@ -57,17 +57,16 @@ class _ExerciseCoachScreenState extends ConsumerState<ExerciseCoachScreen>
       ))
       ..loadFlutterAsset('assets/exercise-coach/index.html');
 
-    if (widget.trackReps) {
-      controller.addJavaScriptChannel(
-        'RepCounter',
-        onMessageReceived: (JavaScriptMessage message) {
-          final int reps = int.tryParse(message.message) ?? 0;
-          if (mounted) {
-            setState(() => _completedReps = reps);
-          }
-        },
-      );
-    }
+    // Always add the JavaScript channel to receive rep counts
+    controller.addJavaScriptChannel(
+      'RepCounter',
+      onMessageReceived: (JavaScriptMessage message) {
+        final int reps = int.tryParse(message.message) ?? 0;
+        if (mounted) {
+          setState(() => _completedReps = reps);
+        }
+      },
+    );
 
     _controller = controller;
   }
@@ -89,6 +88,7 @@ class _ExerciseCoachScreenState extends ConsumerState<ExerciseCoachScreen>
   }
 
   Future<void> _saveAndPop() async {
+    // Only save if tracking is enabled (weekly assessment)
     if (widget.trackReps && _completedReps > 0 && _coachId != null) {
       final notifier = ref.read(exerciseProgressNotifierProvider.notifier);
       await notifier.saveProgress(_coachId!, _completedReps);

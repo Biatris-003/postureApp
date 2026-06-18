@@ -30,7 +30,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
   bool _isPlaying = false;
 
   static const Map<String, List<String>> _exerciseInstructions = {
-    // ... (same as before, full list) ...
+    // ... (keep all existing instructions) ...
     'Bird Dog': [
       'Start on all fours with your hands directly under your shoulders and knees under your hips.',
       'Keep your spine neutral and engage your core.',
@@ -229,7 +229,9 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     String repsSetsDisplay = '10 Reps × 3 Sets';
     if (!widget.fromWeeklyAssessment) {
       if (widget.completedReps != null && widget.completedReps! > 0) {
-        repsSetsDisplay = '${widget.completedReps} Reps × 3 Sets';
+        // Calculate: Ceiling(completedReps / 3) Reps × 3 Sets
+        final repsPerSet = (widget.completedReps! / 3).ceil();
+        repsSetsDisplay = '$repsPerSet Reps × 3 Sets';
       }
     }
 
