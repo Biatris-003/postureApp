@@ -12,27 +12,69 @@ class MonitoringTab extends ConsumerStatefulWidget {
   ConsumerState<MonitoringTab> createState() => _MonitoringTabState();
 }
 
-class _MonitoringTabState extends ConsumerState<MonitoringTab> {
-  // Ticks every second so the elapsed timer re-renders without rebuilding the whole tree.
+class _MonitoringTabState extends ConsumerState<MonitoringTab>
+    with SingleTickerProviderStateMixin {
   Timer? _clockTimer;
+  late AnimationController _streakPopController;
+  late Animation<double> _streakPopAnim;
+  // Tracks whether the pop has already fired for the current streak's
+  // moment of surpassing the previous best.
+  bool _streakPopFired = false;
 
   @override
   void initState() {
     super.initState();
+    _streakPopController = AnimationController(
+      duration: const Duration(milliseconds: 650),
+      vsync: this,
+    );
+    _streakPopAnim = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(begin: 1.0, end: 1.35)
+            .chain(CurveTween(curve: Curves.easeOut)),
+        weight: 35,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 1.35, end: 1.0)
+            .chain(CurveTween(curve: Curves.elasticOut)),
+        weight: 65,
+      ),
+    ]).animate(_streakPopController);
+
     _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() {});
+      if (!mounted) return;
+      // Check if the live streak just surpassed the frozen best.
+      final session = ref.read(sessionProvider);
+      if (session.currentStreakStart != null && !_streakPopFired) {
+        final live = DateTime.now()
+            .difference(session.currentStreakStart!)
+            .inSeconds;
+        if (live > session.bestStreakSeconds && session.bestStreakSeconds > 0) {
+          _streakPopFired = true;
+          _streakPopController.forward(from: 0);
+        }
+      }
+      setState(() {});
     });
   }
 
   @override
   void dispose() {
     _clockTimer?.cancel();
+    _streakPopController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider);
+
+    // Reset pop flag each time a new upright streak begins.
+    ref.listen<SessionState>(sessionProvider, (prev, next) {
+      if (prev?.currentStreakStart == null && next.currentStreakStart != null) {
+        _streakPopFired = false;
+      }
+    });
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -151,9 +193,6 @@ class _MonitoringTabState extends ConsumerState<MonitoringTab> {
   // ─── Active ──────────────────────────────────────────────────────────────
 
   Widget _buildActive(BuildContext context, SessionState session) {
-    final posture = session.lastPosture ?? 2;
-    final postureName = postureNames[posture] ?? 'Unknown';
-    final color = postureColors[posture] ?? Theme.of(context).primaryColor;
     final percentages = session.posturePercentages;
 
     return SingleChildScrollView(
@@ -163,14 +202,16 @@ class _MonitoringTabState extends ConsumerState<MonitoringTab> {
         children: [
           _buildSessionHeader(context, session.elapsed),
           const SizedBox(height: 28),
-          _buildPostureCard(context, postureName, color),
+          _buildPostureCard(context, session),
+          const SizedBox(height: 28),
+          _buildScoreCard(context, session.sessionScore),
+          const SizedBox(height: 12),
+          _buildStreakCard(context, session),
           const SizedBox(height: 28),
           if (percentages.isNotEmpty) ...[
             _buildBreakdown(context, percentages),
             const SizedBox(height: 28),
           ],
-          _buildScoreCard(context, session.sessionScore),
-          const SizedBox(height: 28),
           _buildEndButton(context),
           const SizedBox(height: 16),
         ],
@@ -217,38 +258,141 @@ class _MonitoringTabState extends ConsumerState<MonitoringTab> {
   }
 
   Widget _buildPostureCard(
-      BuildContext context, String postureName, Color color) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 400),
-      curve: Curves.easeOut,
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: color.withValues(alpha: 0.3), width: 2),
+      BuildContext context, SessionState session) {
+    final posture = session.lastPosture ?? 2;
+    final postureName = postureNames[posture] ?? 'Unknown';
+    final color = postureColors[posture] ?? Theme.of(context).primaryColor;
+    final probs = session.lastProbabilities;
+
+    final double strength;
+    if (posture == 2) {
+      strength = (session.lastConfidence ?? 0.0).clamp(0.0, 1.0);
+    } else {
+      final uprightProb = (probs != null && probs.length > 1) ? probs[1] : 1.0;
+      strength = (1.0 - uprightProb).clamp(0.0, 1.0);
+    }
+
+    final glowColor = posture == 2
+        ? const Color(0xFF10B981)
+        : const Color(0xFFEF4444);
+
+    // Percentage is the posture color, turns red if bad and deviation > 50%.
+    final pctColor = (posture != 2 && strength > 0.5)
+        ? const Color(0xFFEF4444)
+        : color;
+
+    final strengthPct = (strength * 100).round();
+
+    // Split two-word names onto two lines.
+    final displayName = postureName.replaceFirst(' ', '\n');
+
+    return Center(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeOut,
+        width: 220,
+        height: 220,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: color.withValues(alpha: 0.22),
+          border: Border.all(
+            color: glowColor.withValues(alpha: 0.25 + strength * 0.65),
+            width: 2.5 + strength * 3.5,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: glowColor.withValues(alpha: strength * 0.45),
+              blurRadius: 12 + strength * 48,
+              spreadRadius: strength * 16,
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(
+              displayName,
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w900,
+                color: color,
+                letterSpacing: -0.3,
+                height: 1.15,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 10),
+            Text(
+              '$strengthPct%',
+              style: TextStyle(
+                fontSize: 36,
+                fontWeight: FontWeight.w900,
+                color: pctColor,
+              ),
+            ),
+          ],
+        ),
       ),
-      child: Column(
+    );
+  }
+
+  // Returns the value to display: live count if currently surpassing best,
+  // otherwise the frozen best.
+  int _getStreakDisplay(SessionState session) {
+    final start = session.currentStreakStart;
+    if (start != null) {
+      final live = DateTime.now().difference(start).inSeconds;
+      if (live > session.bestStreakSeconds) return live;
+    }
+    return session.bestStreakSeconds;
+  }
+
+  String _formatStreak(int seconds) {
+    if (seconds == 0) return '0s';
+    if (seconds < 60) return '${seconds}s';
+    final m = seconds ~/ 60;
+    final s = seconds % 60;
+    return s == 0 ? '${m}m' : '${m}m ${s}s';
+  }
+
+  Widget _buildStreakCard(BuildContext context, SessionState session) {
+    final displayed = _getStreakDisplay(session);
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Theme.of(context).shadowColor.withValues(alpha: 0.05),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
-            'Current Posture',
-            style: TextStyle(
-              color: color.withValues(alpha: 0.7),
-              fontWeight: FontWeight.w500,
-              fontSize: 13,
-              letterSpacing: 0.5,
-            ),
+            'Best Upright Streak',
+            style: Theme.of(context)
+                .textTheme
+                .titleMedium
+                ?.copyWith(fontWeight: FontWeight.bold),
           ),
-          const SizedBox(height: 10),
-          Text(
-            postureName,
-            style: TextStyle(
-              fontSize: 30,
-              fontWeight: FontWeight.w900,
-              color: color,
-              letterSpacing: -0.5,
+          AnimatedBuilder(
+            animation: _streakPopAnim,
+            builder: (context, child) =>
+                Transform.scale(scale: _streakPopAnim.value, child: child),
+            child: Text(
+              _formatStreak(displayed),
+              style: const TextStyle(
+                fontSize: 32,
+                fontWeight: FontWeight.w900,
+                color: Color(0xFF3B82F6),
+              ),
             ),
-            textAlign: TextAlign.center,
           ),
         ],
       ),

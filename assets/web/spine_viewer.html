@@ -18,91 +18,144 @@
 <div id="hint">Drag to rotate · Pinch to zoom</div>
 <script src="three.min.js"></script>
 <script>
-// ── Scene setup ─────────────────────────────────────────────────────────────
-const scene    = new THREE.Scene();
+// ── Scene setup ──────────────────────────────────────────────────────────────
+var scene = new THREE.Scene();
 scene.background = new THREE.Color(0x111827);
 
-const W = window.innerWidth, H = window.innerHeight;
-const camera   = new THREE.PerspectiveCamera(42, W / H, 0.001, 20);
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+var W = window.innerWidth, H = window.innerHeight;
+var camera   = new THREE.PerspectiveCamera(42, W / H, 0.001, 20);
+var renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(W, H);
 document.body.appendChild(renderer.domElement);
 
+// Flutter calls this to tint the scene background to match the app theme.
+window.setBackground = function(cssHex) {
+  scene.background = new THREE.Color(cssHex);
+};
+
 // ── Lighting ─────────────────────────────────────────────────────────────────
-scene.add(new THREE.AmbientLight(0xffffff, 0.50));
-const sun = new THREE.DirectionalLight(0xffffff, 0.85);
+scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+var sun = new THREE.DirectionalLight(0xffffff, 0.80);
 sun.position.set(1, 2, 1.5);
 scene.add(sun);
-const fill = new THREE.DirectionalLight(0x6688ff, 0.35);
+var fill = new THREE.DirectionalLight(0x8899ff, 0.30);
 fill.position.set(-1, -0.5, -1);
 scene.add(fill);
-const back = new THREE.DirectionalLight(0xff8844, 0.20);
+var back = new THREE.DirectionalLight(0xffaa66, 0.18);
 back.position.set(0, -1, -2);
 scene.add(back);
 
 // ── Spine constants ──────────────────────────────────────────────────────────
-const N       = 25;
-const SENSORS = new Set([1, 6, 14, 18]); // L5, T12, T4, C7
+var N       = 25;
+var SENSORS = [1, 6, 14, 18]; // L5, T12, T4, C7
 
-function levelColor(i) {
-  if (i <= 5)  return 0xe8784d;  // lumbar  – warm amber
-  if (i <= 17) return 0x5b8fd9;  // thoracic – mid blue
-  return 0x40b09a;               // cervical – teal
+function isSensorVert(i) {
+  return i === 1 || i === 6 || i === 14 || i === 18;
 }
 
+function levelColor(i) {
+  if (i <= 5)  return 0xe8784d;
+  if (i <= 17) return 0x5b8fd9;
+  return 0x40b09a;
+}
+
+// ── Body skin mesh ───────────────────────────────────────────────────────────
+// 5 cylinder regions + 1 sphere head, drawn behind the spine (renderOrder 0).
+// depthWrite false so spine geometry always shows through the skin.
+var skinMat = new THREE.MeshLambertMaterial({
+  color: 0xddb896,
+  transparent: true,
+  opacity: 0.26,
+  depthWrite: false
+});
+
+// [fromVertIdx, toVertIdx, xHalfWidth, zHalfDepth]
+var skinCfg = [
+  [0,  1,  0.098, 0.082],
+  [1,  6,  0.088, 0.076],
+  [6,  14, 0.126, 0.092],
+  [14, 18, 0.138, 0.088],
+  [18, 24, 0.042, 0.038]
+];
+
+// Shared unit cylinder (r=0.5, h=1) — each mesh scales it differently.
+var skinCylGeom = new THREE.CylinderGeometry(0.5, 0.5, 1, 12);
+var skinMeshes  = [];
+for (var si = 0; si < skinCfg.length; si++) {
+  var cfg  = skinCfg[si];
+  var smesh = new THREE.Mesh(skinCylGeom, skinMat.clone());
+  smesh.renderOrder = 0;
+  scene.add(smesh);
+  skinMeshes.push({ mesh: smesh, fi: cfg[0], ti: cfg[1], rx: cfg[2], rz: cfg[3] });
+}
+
+// Head sphere
+var headMesh = new THREE.Mesh(
+  new THREE.SphereGeometry(1, 12, 10),
+  skinMat.clone()
+);
+headMesh.renderOrder = 0;
+scene.add(headMesh);
+
 // ── Vertebra disc meshes ─────────────────────────────────────────────────────
-const discs = [];
-for (let i = 0; i < N; i++) {
-  const isSensor = SENSORS.has(i);
-  const radius   = isSensor ? 0.024 : (i < 6 ? 0.020 : i < 18 ? 0.016 : 0.013);
-  const height   = isSensor ? 0.010 : 0.006;
-  const geom = new THREE.CylinderGeometry(radius, radius * 0.9, height, 20);
-  const mat  = new THREE.MeshLambertMaterial({ color: levelColor(i) });
-  const mesh = new THREE.Mesh(geom, mat);
+var discs = [];
+for (var i = 0; i < N; i++) {
+  var sensor = isSensorVert(i);
+  var radius = sensor ? 0.024 : (i < 6 ? 0.020 : i < 18 ? 0.016 : 0.013);
+  var height = sensor ? 0.010 : 0.006;
+  var geom = new THREE.CylinderGeometry(radius, radius * 0.9, height, 20);
+  var mat  = new THREE.MeshLambertMaterial({ color: levelColor(i) });
+  var mesh = new THREE.Mesh(geom, mat);
+  mesh.renderOrder = 1;
   scene.add(mesh);
   discs.push(mesh);
 
-  if (isSensor) {
-    // Glowing ring around sensor vertebra
-    const rg  = new THREE.TorusGeometry(radius + 0.009, 0.0028, 8, 28);
-    const rm  = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: new THREE.Color(0x555555) });
-    const ring = new THREE.Mesh(rg, rm);
-    ring.rotation.x = Math.PI / 2;  // lay flat in XZ plane
+  if (sensor) {
+    var rg   = new THREE.TorusGeometry(radius + 0.009, 0.0028, 8, 28);
+    var rm   = new THREE.MeshLambertMaterial({ color: 0xcccccc });
+    var ring = new THREE.Mesh(rg, rm);
+    ring.rotation.x = Math.PI / 2;
+    ring.renderOrder = 1;
     mesh.add(ring);
   }
 }
 
-// ── Segment cylinders (vertebral bodies between discs) ───────────────────────
-const segs = [];
-for (let i = 0; i < N - 1; i++) {
-  const r    = i < 6 ? 0.013 : i < 18 ? 0.010 : 0.008;
-  const geom = new THREE.CylinderGeometry(r, r, 1, 10);
-  const mat  = new THREE.MeshLambertMaterial({
+// ── Segment cylinders ────────────────────────────────────────────────────────
+var segs = [];
+for (var i = 0; i < N - 1; i++) {
+  var r    = i < 6 ? 0.013 : i < 18 ? 0.010 : 0.008;
+  var geom = new THREE.CylinderGeometry(r, r, 1, 10);
+  var mat  = new THREE.MeshLambertMaterial({
     color: levelColor(i),
     transparent: true,
-    opacity: 0.55,
+    opacity: 0.60
   });
-  const mesh = new THREE.Mesh(geom, mat);
+  var mesh = new THREE.Mesh(geom, mat);
+  mesh.renderOrder = 1;
   scene.add(mesh);
   segs.push(mesh);
 }
 
 // ── Spinal cord line ─────────────────────────────────────────────────────────
-const linePos  = new Float32Array(N * 3);
-const lineGeom = new THREE.BufferGeometry();
+var linePos  = new Float32Array(N * 3);
+var lineGeom = new THREE.BufferGeometry();
 lineGeom.setAttribute('position', new THREE.BufferAttribute(linePos, 3));
-const lineMat  = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.18 });
-scene.add(new THREE.Line(lineGeom, lineMat));
-
+var lineMat  = new THREE.LineBasicMaterial({
+  color: 0x888888,
+  transparent: true,
+  opacity: 0.35
+});
+var cordLine = new THREE.Line(lineGeom, lineMat);
+cordLine.renderOrder = 2;
+scene.add(cordLine);
 
 // ── Touch orbit ──────────────────────────────────────────────────────────────
-// Spherical coordinates around a fixed target (mid-thoracic, ≈ 0.5 up)
-const target = new THREE.Vector3(0, 0.48, 0);
-let theta  = 0.45;   // azimuthal  (side view offset slightly)
-let phi    = 1.28;   // polar      (slightly from above)
-let radius = 0.90;
-let pX = 0, pY = 0, pPinch = 0;
+var target = new THREE.Vector3(0, 0.48, 0);
+var theta  = 0.45;
+var phi    = 1.28;
+var radius = 0.90;
+var pX = 0, pY = 0, pPinch = 0;
 
 function moveCamera() {
   camera.position.set(
@@ -114,8 +167,8 @@ function moveCamera() {
 }
 moveCamera();
 
-const el = renderer.domElement;
-el.addEventListener('touchstart', e => {
+var el = renderer.domElement;
+el.addEventListener('touchstart', function(e) {
   if (e.touches.length === 1) { pX = e.touches[0].clientX; pY = e.touches[0].clientY; }
   if (e.touches.length === 2) {
     pPinch = Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
@@ -123,40 +176,39 @@ el.addEventListener('touchstart', e => {
   }
 }, { passive: true });
 
-el.addEventListener('touchmove', e => {
+el.addEventListener('touchmove', function(e) {
   e.preventDefault();
   if (e.touches.length === 1) {
-    const dx = e.touches[0].clientX - pX;
-    const dy = e.touches[0].clientY - pY;
+    var dx = e.touches[0].clientX - pX;
+    var dy = e.touches[0].clientY - pY;
     theta -= dx * 0.006;
     phi = Math.max(0.12, Math.min(Math.PI - 0.12, phi + dy * 0.006));
     pX = e.touches[0].clientX;
     pY = e.touches[0].clientY;
     moveCamera();
   } else if (e.touches.length === 2 && pPinch > 0) {
-    const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
-                         e.touches[0].clientY - e.touches[1].clientY);
+    var d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
+                       e.touches[0].clientY - e.touches[1].clientY);
     radius = Math.max(0.25, Math.min(2.2, radius * pPinch / d));
     pPinch = d;
     moveCamera();
   }
 }, { passive: false });
 
-// ── updateSpine — called from Flutter via runJavaScript ───────────────────────
-// flat: [x0,y0,z0, x1,y1,z1, ..., x24,y24,z24]
-// SpinePoint3D axes: x=forward(anterior), y=up, z=right
-// Three.js axes:     X=right,             Y=up, Z=toward-viewer
-const _up  = new THREE.Vector3(0, 1, 0);
-const _dir = new THREE.Vector3();
-const _mid = new THREE.Vector3();
-const _qa  = new THREE.Quaternion();
+// ── updateSpine — called from Flutter via runJavaScript ──────────────────────
+var _up  = new THREE.Vector3(0, 1, 0);
+var _dir = new THREE.Vector3();
+var _mid = new THREE.Vector3();
+var _qa  = new THREE.Quaternion();
 
 window.updateSpine = function(flat) {
-  for (let i = 0; i < N; i++) {
-    const sx = flat[i * 3];       // forward
-    const sy = flat[i * 3 + 1];  // up
-    const sz = flat[i * 3 + 2];  // right
-    // Map to Three.js: forward→-Z, right→X, up→Y
+  var i, ax, ay, az, bx, by, bz, len;
+
+  // 1. Position discs and fill linePos buffer.
+  for (i = 0; i < N; i++) {
+    var sx = flat[i * 3];
+    var sy = flat[i * 3 + 1];
+    var sz = flat[i * 3 + 2];
     discs[i].position.set(sz, sy, -sx);
     linePos[i * 3]     = sz;
     linePos[i * 3 + 1] = sy;
@@ -164,12 +216,13 @@ window.updateSpine = function(flat) {
   }
   lineGeom.attributes.position.needsUpdate = true;
 
-  for (let i = 0; i < N - 1; i++) {
-    const ax = linePos[i * 3],     ay = linePos[i * 3 + 1],     az = linePos[i * 3 + 2];
-    const bx = linePos[(i+1)*3],   by = linePos[(i+1)*3+1],     bz = linePos[(i+1)*3+2];
+  // 2. Orient segment cylinders.
+  for (i = 0; i < N - 1; i++) {
+    ax = linePos[i*3];     ay = linePos[i*3+1];     az = linePos[i*3+2];
+    bx = linePos[(i+1)*3]; by = linePos[(i+1)*3+1]; bz = linePos[(i+1)*3+2];
     _mid.set((ax+bx)/2, (ay+by)/2, (az+bz)/2);
     _dir.set(bx-ax, by-ay, bz-az);
-    const len = _dir.length();
+    len = _dir.length();
     if (len < 1e-6) continue;
     _dir.normalize();
     _qa.setFromUnitVectors(_up, _dir);
@@ -178,6 +231,26 @@ window.updateSpine = function(flat) {
     segs[i].scale.y = len;
   }
 
+  // 3. Position body skin segments.
+  for (i = 0; i < skinMeshes.length; i++) {
+    var s = skinMeshes[i];
+    ax = linePos[s.fi*3];   ay = linePos[s.fi*3+1]; az = linePos[s.fi*3+2];
+    bx = linePos[s.ti*3];   by = linePos[s.ti*3+1]; bz = linePos[s.ti*3+2];
+    _mid.set((ax+bx)/2, (ay+by)/2, (az+bz)/2);
+    _dir.set(bx-ax, by-ay, bz-az);
+    len = _dir.length();
+    if (len < 1e-6) continue;
+    _dir.normalize();
+    _qa.setFromUnitVectors(_up, _dir);
+    s.mesh.position.copy(_mid);
+    s.mesh.quaternion.copy(_qa);
+    s.mesh.scale.set(s.rx * 2, len, s.rz * 2);
+  }
+
+  // 4. Position head sphere above C1 (index 24).
+  var HR = 0.068;
+  headMesh.position.set(linePos[72], linePos[73] + HR * 1.15, linePos[74]);
+  headMesh.scale.set(HR, HR * 1.18, HR * 0.92);
 };
 
 // ── Render loop ──────────────────────────────────────────────────────────────
@@ -187,7 +260,7 @@ function animate() {
 }
 animate();
 
-window.addEventListener('resize', () => {
+window.addEventListener('resize', function() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);

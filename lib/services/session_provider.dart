@@ -1,8 +1,10 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/datasources/auth_service_mock.dart';
 import 'ml/realtime_processor.dart';
 
 const Map<int, String> postureNames = {
@@ -32,6 +34,15 @@ const Map<int, double> _postureWeights = {
   6: 40.0,
 };
 
+const Map<int, String> _postureLabels = {
+  1: 'backward_bending',
+  2: 'upright',
+  3: 'slouching',
+  4: 'forward_bending',
+  5: 'right_bending',
+  6: 'left_bending',
+};
+
 enum SessionStatus { idle, starting, active }
 
 class PostureEvent {
@@ -54,14 +65,23 @@ class SessionState {
     this.startTime,
     this.lastPosture,
     this.lastConfidence,
+    this.lastProbabilities,
     this.timeline = const [],
+    this.bestStreakSeconds = 0,
+    this.currentStreakStart,
   });
 
   final SessionStatus status;
   final DateTime? startTime;
   final int? lastPosture;
   final double? lastConfidence;
+  // Full softmax output — used to compute deviation from upright for non-upright postures.
+  final List<double>? lastProbabilities;
   final List<PostureEvent> timeline;
+  // Peak upright streak from completed streaks (seconds). Frozen when a streak ends.
+  final int bestStreakSeconds;
+  // Start time of the current upright streak; null when not in upright.
+  final DateTime? currentStreakStart;
 
   Duration get elapsed =>
       startTime == null ? Duration.zero : DateTime.now().difference(startTime!);
@@ -85,19 +105,38 @@ class SessionState {
     return total / timeline.length;
   }
 
+  // Number of times the classified posture changed.
+  int get postureChanges {
+    if (timeline.length < 2) return 0;
+    int changes = 0;
+    for (int i = 1; i < timeline.length; i++) {
+      if (timeline[i].posture != timeline[i - 1].posture) changes++;
+    }
+    return changes;
+  }
+
   SessionState copyWith({
     SessionStatus? status,
     DateTime? startTime,
     int? lastPosture,
     double? lastConfidence,
+    List<double>? lastProbabilities,
     List<PostureEvent>? timeline,
+    int? bestStreakSeconds,
+    DateTime? currentStreakStart,
+    bool clearCurrentStreakStart = false,
   }) {
     return SessionState(
       status: status ?? this.status,
       startTime: startTime ?? this.startTime,
       lastPosture: lastPosture ?? this.lastPosture,
       lastConfidence: lastConfidence ?? this.lastConfidence,
+      lastProbabilities: lastProbabilities ?? this.lastProbabilities,
       timeline: timeline ?? this.timeline,
+      bestStreakSeconds: bestStreakSeconds ?? this.bestStreakSeconds,
+      currentStreakStart: clearCurrentStreakStart
+          ? null
+          : (currentStreakStart ?? this.currentStreakStart),
     );
   }
 }
@@ -109,6 +148,7 @@ class SessionData {
     required this.posturePercentages,
     required this.timeline,
     required this.sessionScore,
+    required this.bestStreakSeconds,
   });
 
   final DateTime startTime;
@@ -116,6 +156,7 @@ class SessionData {
   final Map<int, double> posturePercentages;
   final List<PostureEvent> timeline;
   final double sessionScore;
+  final int bestStreakSeconds;
 
   Duration get duration => endTime.difference(startTime);
 }
@@ -165,31 +206,117 @@ class SessionNotifier extends Notifier<SessionState> {
 
   void _onPrediction(PredictionResult result) {
     if (state.status == SessionStatus.idle) return;
+    final now = result.timestamp;
     final event = PostureEvent(
       posture: result.posture,
       name: postureNames[result.posture] ?? 'Unknown',
-      timestamp: result.timestamp,
+      timestamp: now,
       confidence: result.confidence,
     );
+
+    final streakStart = state.currentStreakStart;
+    var newBest = state.bestStreakSeconds;
+    DateTime? nextStreakStart;
+    bool clearStreak = false;
+
+    if (result.posture == 2) {
+      nextStreakStart = streakStart ?? now; // start or continue
+    } else {
+      if (streakStart != null) {
+        final dur = now.difference(streakStart).inSeconds;
+        if (dur > newBest) newBest = dur;
+      }
+      clearStreak = true;
+    }
+
     state = state.copyWith(
       status: SessionStatus.active,
       lastPosture: result.posture,
       lastConfidence: result.confidence,
+      lastProbabilities: result.probabilities,
       timeline: [...state.timeline, event],
+      bestStreakSeconds: newBest,
+      currentStreakStart: nextStreakStart,
+      clearCurrentStreakStart: clearStreak,
     );
   }
 
   SessionData stopSession() {
+    // If user stops while in an upright streak, count it toward the best.
+    final streakStart = state.currentStreakStart;
+    final finalBest = streakStart != null
+        ? () {
+            final dur = DateTime.now().difference(streakStart).inSeconds;
+            return dur > state.bestStreakSeconds ? dur : state.bestStreakSeconds;
+          }()
+        : state.bestStreakSeconds;
+
     final data = SessionData(
       startTime: state.startTime ?? DateTime.now(),
       endTime: DateTime.now(),
       posturePercentages: state.posturePercentages,
       timeline: state.timeline,
       sessionScore: state.sessionScore,
+      bestStreakSeconds: finalBest,
     );
     _cleanup();
     state = const SessionState();
+    _saveSessionToFirestore(data);
     return data;
+  }
+
+  Future<void> _saveSessionToFirestore(SessionData data) async {
+    try {
+      final user = ref.read(authStateProvider);
+      if (user == null) return;
+
+      final db = FirebaseFirestore.instance;
+
+      final patientSnapshot = await db
+          .collection('patients')
+          .where('userId', isEqualTo: user.uid)
+          .limit(1)
+          .get();
+
+      if (patientSnapshot.docs.isEmpty) return;
+
+      final patientId = patientSnapshot.docs.first.id;
+
+      final sessionRef = await db.collection('sessionResults').add({
+        'patientId': patientId,
+        'startTimestamp': Timestamp.fromDate(data.startTime),
+        'endTimestamp': Timestamp.fromDate(data.endTime),
+        'durationMinutes': data.duration.inMinutes,
+        'sessionScore': data.sessionScore,
+        'status': 'completed',
+        'posturePercentages': data.posturePercentages
+            .map((k, v) => MapEntry(k.toString(), v)),
+      });
+
+      // Write each prediction event to postureClassifications so the
+      // analytics page has data to read. Split into 500-item batches.
+      const chunkSize = 500;
+      final timeline = data.timeline;
+      for (int i = 0; i < timeline.length; i += chunkSize) {
+        final chunk =
+            timeline.sublist(i, (i + chunkSize).clamp(0, timeline.length));
+        final batch = db.batch();
+        for (final event in chunk) {
+          batch.set(db.collection('postureClassifications').doc(), {
+            'patientId': patientId,
+            'sessionId': sessionRef.id,
+            'postureLabel': _postureLabels[event.posture] ?? 'unknown',
+            'confidenceScore': event.confidence,
+            'timestamp': Timestamp.fromDate(event.timestamp),
+            'readingId': '',
+            'modelId': 'loso_model',
+          });
+        }
+        await batch.commit();
+      }
+    } catch (e) {
+      debugPrint('[SessionNotifier] failed to save session: $e');
+    }
   }
 
   Future<void> _cleanup() async {

@@ -54,9 +54,12 @@ class _SpineViewTabState extends ConsumerState<SpineViewTab>
 
     _wvc = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(const Color(0xFF111827))
+      ..setBackgroundColor(Colors.transparent)
       ..setNavigationDelegate(NavigationDelegate(
-        onPageFinished: (_) => setState(() => _webReady = true),
+        onPageFinished: (_) {
+          setState(() => _webReady = true);
+          // Background synced in build() once context is available.
+        },
       ))
       ..loadFlutterAsset('assets/web/spine_viewer.html');
   }
@@ -69,6 +72,16 @@ class _SpineViewTabState extends ConsumerState<SpineViewTab>
 
   void _calibrate(Map<String, List<double>> quats) {
     setState(() => _neutralQuats = Map.from(quats));
+  }
+
+  // Sends the scaffold background color to Three.js so it matches the app theme.
+  void _syncBackground(BuildContext context) {
+    if (!_webReady) return;
+    final c = Theme.of(context).scaffoldBackgroundColor;
+    final hex = c.r.round().toRadixString(16).padLeft(2, '0') +
+                c.g.round().toRadixString(16).padLeft(2, '0') +
+                c.b.round().toRadixString(16).padLeft(2, '0');
+    _wvc.runJavaScript("setBackground('#$hex')");
   }
 
   void _sendToWebView(Map<String, List<double>> quats) {
@@ -87,6 +100,9 @@ class _SpineViewTabState extends ConsumerState<SpineViewTab>
   Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider);
     final quats   = ref.watch(latestQuatsProvider);
+
+    // Sync scene background to app theme on first ready frame and on rebuilds.
+    if (_webReady) _syncBackground(context);
 
     ref.listen<Map<String, List<double>>?>(latestQuatsProvider, (prev, next) {
       if (next == null) return;
@@ -143,7 +159,6 @@ class _SpineViewTabState extends ConsumerState<SpineViewTab>
                       quats: quats,
                       wvc: _wvc,
                       neutralQuats: _neutralQuats,
-                      onCalibrate: () => _calibrate(quats),
                     ),
             ),
           ],
@@ -284,12 +299,10 @@ class _LiveBody extends StatelessWidget {
     required this.quats,
     required this.wvc,
     required this.neutralQuats,
-    required this.onCalibrate,
   });
   final Map<String, List<double>> quats;
   final WebViewController wvc;
   final Map<String, List<double>>? neutralQuats;
-  final VoidCallback onCalibrate;
 
   @override
   Widget build(BuildContext context) {
@@ -298,28 +311,13 @@ class _LiveBody extends StatelessWidget {
     return Column(
       children: [
         _MetricsRow(metrics: metrics),
-        const SizedBox(height: 4),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              TextButton.icon(
-                onPressed: onCalibrate,
-                icon: const Icon(Icons.tune_rounded, size: 14),
-                label: const Text('Calibrate neutral', style: TextStyle(fontSize: 11)),
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-              ),
-            ],
-          ),
-        ),
         Expanded(
           child: ClipRRect(
             borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-            child: WebViewWidget(controller: wvc),
+            child: ColoredBox(
+              color: Theme.of(context).scaffoldBackgroundColor,
+              child: WebViewWidget(controller: wvc),
+            ),
           ),
         ),
       ],

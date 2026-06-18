@@ -100,16 +100,6 @@ class SpineKinematics {
 
   // ── Quaternion math ──────────────────────────────────────────────────────
 
-  // Neutral roll for each sensor ≈ π because the sensor is mounted with its
-  // front face pointing INTO the back, giving a ~180° X-axis rotation at rest.
-  // Subtracting this gives roll deflection ≈ 0 for upright sitting.
-  static const Map<String, double> _neutralRoll = {
-    'L5':  pi,
-    'T12': pi,
-    'T4':  pi,
-    'C7':  pi,
-  };
-
   /// Wraps an angle to the range (-π, π].
   static double _wrapAngle(double a) {
     var v = a % (2 * pi);
@@ -147,12 +137,22 @@ class SpineKinematics {
     ];
   }
 
-  /// Returns [pitch, roll] in radians using ZYX decomposition.
-  static List<double> _quatToEuler(List<double> q) {
+  /// Returns pitch in radians (ZYX decomposition, rotation around Y axis).
+  /// With X=superior, Y=right, Z=posterior sensor orientation, this captures
+  /// sagittal flexion/extension. Sign is inverted relative to convention
+  /// (forward bend → negative pitch), corrected by negating at call sites.
+  static double _quatPitch(List<double> q) {
     final w = q[0], x = q[1], y = q[2], z = q[3];
-    final pitch = asin((2 * (w * y - z * x)).clamp(-1.0, 1.0));
-    final roll  = atan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y));
-    return [pitch, roll];
+    return asin((2 * (w * y - z * x)).clamp(-1.0, 1.0));
+  }
+
+  /// Returns yaw in radians (ZYX decomposition, rotation around Z axis).
+  /// With X=superior, Y=right, Z=posterior, yaw captures lateral bending
+  /// (rotation around the posterior axis). Roll (around X=superior) captures
+  /// axial twist instead, so we use yaw for the coronal visualization.
+  static double _quatYaw(List<double> q) {
+    final w = q[0], x = q[1], y = q[2], z = q[3];
+    return atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z));
   }
 
   // ── Public API ───────────────────────────────────────────────────────────
@@ -174,20 +174,26 @@ class SpineKinematics {
     // When neutralQuats are available (calibrated), use the relative quaternion
     // q_neutral⁻¹ * q_current so axes decouple: sagittal bend → pure pitch,
     // lateral bend → pure roll, no cross-axis leakage.
+    // Sagittal deflection: negated because Z=posterior inverts the pitch sign.
+    // Forward bending → sensor X+(superior) tilts toward -Z(anterior)
+    // → negative ZYX pitch → negate to get positive for forward in the chain.
     double deflPitch(String id) {
       final q = sensorQuats[id];
       if (q == null) return 0.0;
       final nq = neutralQuats?[id];
-      if (nq != null) return _quatToEuler(_relativeQuat(nq, q))[0];
-      return _quatToEuler(_reorderWxyz(q))[0] - (_neutralPitch[id] ?? 0.0);
+      if (nq != null) return -_quatPitch(_relativeQuat(nq, q));
+      return -(_quatPitch(_reorderWxyz(q)) - (_neutralPitch[id] ?? 0.0));
     }
 
+    // Lateral deflection: uses yaw (rotation around Z=posterior) because with
+    // X=superior and Z=posterior, lateral bending is rotation around Z, which
+    // maps to yaw in ZYX decomp — not roll (which captures axial twist).
     double deflRoll(String id) {
       final q = sensorQuats[id];
       if (q == null) return 0.0;
       final nq = neutralQuats?[id];
-      if (nq != null) return _quatToEuler(_relativeQuat(nq, q))[1];
-      return _wrapAngle(_quatToEuler(_reorderWxyz(q))[1] - (_neutralRoll[id] ?? pi));
+      if (nq != null) return _quatYaw(_relativeQuat(nq, q));
+      return _wrapAngle(_quatYaw(_reorderWxyz(q)));
     }
 
     final dpL5  = deflPitch('L5');  final drL5  = deflRoll('L5');
@@ -250,15 +256,15 @@ class SpineKinematics {
   }) {
     double pitch(String id) {
       final q = sensorQuats[id];
-      return q == null ? 0.0 : _quatToEuler(_reorderWxyz(q))[0];
+      return q == null ? 0.0 : _quatPitch(_reorderWxyz(q));
     }
 
     double rollDefl(String id) {
       final q = sensorQuats[id];
       if (q == null) return 0.0;
       final nq = neutralQuats?[id];
-      if (nq != null) return _quatToEuler(_relativeQuat(nq, q))[1];
-      return _wrapAngle(_quatToEuler(_reorderWxyz(q))[1] - (_neutralRoll[id] ?? pi));
+      if (nq != null) return _quatYaw(_relativeQuat(nq, q));
+      return _wrapAngle(_quatYaw(_reorderWxyz(q)));
     }
 
     final pL5  = pitch('L5');
