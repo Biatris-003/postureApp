@@ -159,7 +159,6 @@ class _SpineViewTabState extends ConsumerState<SpineViewTab>
                       quats: quats,
                       wvc: _wvc,
                       neutralQuats: _neutralQuats,
-                      onCalibrate: () => _calibrate(quats),
                     ),
             ),
           ],
@@ -300,12 +299,10 @@ class _LiveBody extends StatelessWidget {
     required this.quats,
     required this.wvc,
     required this.neutralQuats,
-    required this.onCalibrate,
   });
   final Map<String, List<double>> quats;
   final WebViewController wvc;
   final Map<String, List<double>>? neutralQuats;
-  final VoidCallback onCalibrate;
 
   @override
   Widget build(BuildContext context) {
@@ -314,24 +311,6 @@ class _LiveBody extends StatelessWidget {
     return Column(
       children: [
         _MetricsRow(metrics: metrics),
-        const SizedBox(height: 4),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              TextButton.icon(
-                onPressed: onCalibrate,
-                icon: const Icon(Icons.tune_rounded, size: 14),
-                label: const Text('Calibrate neutral', style: TextStyle(fontSize: 11)),
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-              ),
-            ],
-          ),
-        ),
         Expanded(
           child: ClipRRect(
             borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
