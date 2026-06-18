@@ -3,7 +3,7 @@
 const List<String> trackedExerciseTitles = [
   'Circumduction',
   'Squatting',
-  'Side Bending (Right)',
+  'Side Bending Right',
   'Sit-to-stand',
 ];
 
@@ -11,7 +11,7 @@ const List<String> trackedExerciseTitles = [
 const Map<String, String> exerciseTitleToCoachId = {
   'Circumduction': 'circumduction',
   'Squatting': 'squat',
-  'Side Bending (Right)': 'side_bend_right',
+  'Side Bending Right': 'side_bend_right',
   'Sit-to-stand': 'sit_to_stand',
 };
 

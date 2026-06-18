@@ -145,17 +145,22 @@ class ExercisesTab extends ConsumerWidget {
       BuildContext context, Exercise exercise, Map<String, int> progress) {
     final diffColor = _difficultyColor(exercise.difficultyLevel);
 
-    // Determine if this exercise is one of the 4 tracked (for display only)
+    // Determine if this exercise is one of the 4 tracked
     final isTracked = trackedExerciseTitles.contains(exercise.title);
-    String repsValue = '10';
+    
+    // Get completed reps from weekly assessment
+    String repsDisplay = '10 Reps × 3 Sets';
     if (isTracked) {
       final coachId = exerciseTitleToCoachId[exercise.title];
       if (coachId != null && progress.containsKey(coachId)) {
         final completed = progress[coachId]!;
-        if (completed > 0) repsValue = completed.toString();
+        if (completed > 0) {
+          // Calculate: Ceiling(completedReps / 3) Reps × 3 Sets
+          final repsPerSet = (completed / 3).ceil();
+          repsDisplay = '$repsPerSet Reps × 3 Sets';
+        }
       }
     }
-    final repsDisplay = '$repsValue Reps × 3 Sets';
 
     // Get completed reps for the detail screen (if any)
     final coachId = isTracked ? exerciseTitleToCoachId[exercise.title] : null;
