@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { background: #111827; overflow: hidden; }
+    body { background: transparent; overflow: hidden; }
     canvas { display: block; }
     #hint {
       position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
-      color: rgba(255,255,255,0.28); font: 11px/1 sans-serif;
+      color: rgba(120,120,120,0.55); font: 11px/1 sans-serif;
       pointer-events: none; letter-spacing: 0.04em;
     }
   </style>
@@ -18,26 +18,33 @@
 <div id="hint">Drag to rotate · Pinch to zoom</div>
 <script src="three.min.js"></script>
 <script>
-// ── Scene setup ─────────────────────────────────────────────────────────────
-const scene    = new THREE.Scene();
-scene.background = new THREE.Color(0x111827);
+// ── Scene setup ──────────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+// Transparent — Flutter provides background via ColoredBox; setBackground()
+// lets Flutter tint the scene to match the app theme at runtime.
+scene.background = null;
 
 const W = window.innerWidth, H = window.innerHeight;
 const camera   = new THREE.PerspectiveCamera(42, W / H, 0.001, 20);
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setClearColor(0x000000, 0);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(W, H);
 document.body.appendChild(renderer.domElement);
 
+window.setBackground = function(cssHex) {
+  scene.background = new THREE.Color(cssHex);
+};
+
 // ── Lighting ─────────────────────────────────────────────────────────────────
-scene.add(new THREE.AmbientLight(0xffffff, 0.50));
-const sun = new THREE.DirectionalLight(0xffffff, 0.85);
+scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+const sun = new THREE.DirectionalLight(0xffffff, 0.80);
 sun.position.set(1, 2, 1.5);
 scene.add(sun);
-const fill = new THREE.DirectionalLight(0x6688ff, 0.35);
+const fill = new THREE.DirectionalLight(0x8899ff, 0.30);
 fill.position.set(-1, -0.5, -1);
 scene.add(fill);
-const back = new THREE.DirectionalLight(0xff8844, 0.20);
+const back = new THREE.DirectionalLight(0xffaa66, 0.18);
 back.position.set(0, -1, -2);
 scene.add(back);
 
@@ -51,6 +58,49 @@ function levelColor(i) {
   return 0x40b09a;               // cervical – teal
 }
 
+// ── Body skin mesh (semi-transparent, drawn first so spine shows through) ────
+// renderOrder 0 → body behind everything.
+// depthWrite false → body never occludes the spine discs.
+//
+// 5 cylinder regions + 1 sphere head.  All geometry created once; only
+// position / quaternion / scale are updated per frame in updateSpine().
+//
+// Dimensions are in normalised spine-height units (full sacrum→C1 = ~1.0).
+// rx = mediolateral half-width, rz = anteroposterior half-depth.
+const _skinMat = new THREE.MeshLambertMaterial({
+  color: 0xddb896,
+  transparent: true,
+  opacity: 0.24,
+  depthWrite: false,
+  side: THREE.DoubleSide,
+});
+
+// [fromVertIdx, toVertIdx, rx, rz]
+const _skinCfg = [
+  [0,  1,  0.098, 0.082],  // pelvis / sacrum
+  [1,  6,  0.088, 0.076],  // lumbar
+  [6,  14, 0.126, 0.092],  // thoracic (chest — widest)
+  [14, 18, 0.138, 0.088],  // upper thoracic / shoulder girdle
+  [18, 24, 0.042, 0.038],  // neck
+];
+
+// Unit cylinder (r=0.5, h=1) — scaled each frame via mesh.scale.
+const _skinCylGeom = new THREE.CylinderGeometry(0.5, 0.5, 1, 12);
+const _skinMeshes = _skinCfg.map(([fi, ti, rx, rz]) => {
+  const mesh = new THREE.Mesh(_skinCylGeom, _skinMat.clone());
+  mesh.renderOrder = 0;
+  scene.add(mesh);
+  return { mesh, fi, ti, rx, rz };
+});
+
+// Head sphere (unit sphere scaled per-frame).
+const _headMesh = new THREE.Mesh(
+  new THREE.SphereGeometry(1, 12, 10),
+  _skinMat.clone()
+);
+_headMesh.renderOrder = 0;
+scene.add(_headMesh);
+
 // ── Vertebra disc meshes ─────────────────────────────────────────────────────
 const discs = [];
 for (let i = 0; i < N; i++) {
@@ -60,15 +110,20 @@ for (let i = 0; i < N; i++) {
   const geom = new THREE.CylinderGeometry(radius, radius * 0.9, height, 20);
   const mat  = new THREE.MeshLambertMaterial({ color: levelColor(i) });
   const mesh = new THREE.Mesh(geom, mat);
+  mesh.renderOrder = 1;
   scene.add(mesh);
   discs.push(mesh);
 
   if (isSensor) {
-    // Glowing ring around sensor vertebra
-    const rg  = new THREE.TorusGeometry(radius + 0.009, 0.0028, 8, 28);
-    const rm  = new THREE.MeshLambertMaterial({ color: 0xffffff, emissive: new THREE.Color(0x555555) });
+    // Ring indicator around sensor-level vertebrae.
+    const rg   = new THREE.TorusGeometry(radius + 0.009, 0.0028, 8, 28);
+    const rm   = new THREE.MeshLambertMaterial({
+      color: 0xcccccc,
+      emissive: new THREE.Color(0x444444),
+    });
     const ring = new THREE.Mesh(rg, rm);
-    ring.rotation.x = Math.PI / 2;  // lay flat in XZ plane
+    ring.rotation.x = Math.PI / 2;
+    ring.renderOrder = 1;
     mesh.add(ring);
   }
 }
@@ -81,26 +136,32 @@ for (let i = 0; i < N - 1; i++) {
   const mat  = new THREE.MeshLambertMaterial({
     color: levelColor(i),
     transparent: true,
-    opacity: 0.55,
+    opacity: 0.60,
   });
   const mesh = new THREE.Mesh(geom, mat);
+  mesh.renderOrder = 1;
   scene.add(mesh);
   segs.push(mesh);
 }
 
-// ── Spinal cord line ─────────────────────────────────────────────────────────
+// ── Spinal cord centre-line ───────────────────────────────────────────────────
 const linePos  = new Float32Array(N * 3);
 const lineGeom = new THREE.BufferGeometry();
 lineGeom.setAttribute('position', new THREE.BufferAttribute(linePos, 3));
-const lineMat  = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.18 });
-scene.add(new THREE.Line(lineGeom, lineMat));
-
+// Mid-grey so it's readable on both light and dark backgrounds.
+const lineMat = new THREE.LineBasicMaterial({
+  color: 0x888888,
+  transparent: true,
+  opacity: 0.35,
+});
+const cordLine = new THREE.Line(lineGeom, lineMat);
+cordLine.renderOrder = 2;
+scene.add(cordLine);
 
 // ── Touch orbit ──────────────────────────────────────────────────────────────
-// Spherical coordinates around a fixed target (mid-thoracic, ≈ 0.5 up)
 const target = new THREE.Vector3(0, 0.48, 0);
-let theta  = 0.45;   // azimuthal  (side view offset slightly)
-let phi    = 1.28;   // polar      (slightly from above)
+let theta  = 0.45;
+let phi    = 1.28;
 let radius = 0.90;
 let pX = 0, pY = 0, pPinch = 0;
 
@@ -142,8 +203,8 @@ el.addEventListener('touchmove', e => {
   }
 }, { passive: false });
 
-// ── updateSpine — called from Flutter via runJavaScript ───────────────────────
-// flat: [x0,y0,z0, x1,y1,z1, ..., x24,y24,z24]
+// ── updateSpine — called from Flutter via runJavaScript ──────────────────────
+// flat: [x0,y0,z0, ..., x24,y24,z24]
 // SpinePoint3D axes: x=forward(anterior), y=up, z=right
 // Three.js axes:     X=right,             Y=up, Z=toward-viewer
 const _up  = new THREE.Vector3(0, 1, 0);
@@ -152,11 +213,11 @@ const _mid = new THREE.Vector3();
 const _qa  = new THREE.Quaternion();
 
 window.updateSpine = function(flat) {
+  // 1. Position discs and fill linePos buffer.
   for (let i = 0; i < N; i++) {
-    const sx = flat[i * 3];       // forward
-    const sy = flat[i * 3 + 1];  // up
-    const sz = flat[i * 3 + 2];  // right
-    // Map to Three.js: forward→-Z, right→X, up→Y
+    const sx = flat[i * 3];
+    const sy = flat[i * 3 + 1];
+    const sz = flat[i * 3 + 2];
     discs[i].position.set(sz, sy, -sx);
     linePos[i * 3]     = sz;
     linePos[i * 3 + 1] = sy;
@@ -164,9 +225,10 @@ window.updateSpine = function(flat) {
   }
   lineGeom.attributes.position.needsUpdate = true;
 
+  // 2. Orient inter-vertebral segment cylinders.
   for (let i = 0; i < N - 1; i++) {
-    const ax = linePos[i * 3],     ay = linePos[i * 3 + 1],     az = linePos[i * 3 + 2];
-    const bx = linePos[(i+1)*3],   by = linePos[(i+1)*3+1],     bz = linePos[(i+1)*3+2];
+    const ax = linePos[i*3],     ay = linePos[i*3+1],     az = linePos[i*3+2];
+    const bx = linePos[(i+1)*3], by = linePos[(i+1)*3+1], bz = linePos[(i+1)*3+2];
     _mid.set((ax+bx)/2, (ay+by)/2, (az+bz)/2);
     _dir.set(bx-ax, by-ay, bz-az);
     const len = _dir.length();
@@ -178,6 +240,30 @@ window.updateSpine = function(flat) {
     segs[i].scale.y = len;
   }
 
+  // 3. Orient body skin segments along the same line positions.
+  //    Each cylinder uses scale.set(rx*2, segLen, rz*2) so rx/rz are
+  //    the actual half-extents in world units (no extra factor needed).
+  _skinMeshes.forEach(({ mesh, fi, ti, rx, rz }) => {
+    const ax = linePos[fi*3],   ay = linePos[fi*3+1],   az = linePos[fi*3+2];
+    const bx = linePos[ti*3],   by = linePos[ti*3+1],   bz = linePos[ti*3+2];
+    _mid.set((ax+bx)/2, (ay+by)/2, (az+bz)/2);
+    _dir.set(bx-ax, by-ay, bz-az);
+    const len = _dir.length();
+    if (len < 1e-6) return;
+    _dir.normalize();
+    _qa.setFromUnitVectors(_up, _dir);
+    mesh.position.copy(_mid);
+    mesh.quaternion.copy(_qa);
+    // X = mediolateral width, Y = segment length, Z = anteroposterior depth.
+    mesh.scale.set(rx * 2, len, rz * 2);
+  });
+
+  // 4. Head: sphere just above the C1 position (last vertex, index 24).
+  const c1x = linePos[72], c1y = linePos[73], c1z = linePos[74];
+  const HR = 0.068;
+  _headMesh.position.set(c1x, c1y + HR * 1.15, c1z);
+  // Slightly oval: a bit taller than wide, slightly flatter front-to-back.
+  _headMesh.scale.set(HR, HR * 1.18, HR * 0.92);
 };
 
 // ── Render loop ──────────────────────────────────────────────────────────────
