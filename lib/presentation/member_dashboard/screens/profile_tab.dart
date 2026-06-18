@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../data/datasources/auth_service_mock.dart';
+import 'settings_tab.dart';
 
 class ProfileTab extends ConsumerStatefulWidget {
   const ProfileTab({super.key});
@@ -397,13 +398,32 @@ class _ProfileTabState extends ConsumerState<ProfileTab> {
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-              color: Theme.of(context).shadowColor.withOpacity(0.05),
+              color: Theme.of(context).shadowColor.withValues(alpha: 0.05),
               blurRadius: 15,
               offset: const Offset(0, 5)),
         ],
       ),
       child: Column(
         children: [
+          _buildSettingsTile(context,
+              icon: Icons.settings_outlined,
+              title: 'Settings',
+              trailing: Icon(Icons.chevron_right_rounded,
+                  color: Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withValues(alpha: 0.3),
+                  size: 28),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const SettingsTab()),
+                );
+              }),
+          Divider(
+              height: 1,
+              indent: 64,
+              color: Theme.of(context).scaffoldBackgroundColor),
           _buildSettingsTile(context,
               icon: Icons.notifications_active_outlined,
               title: 'Push Notifications',
@@ -422,7 +442,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab> {
                   color: Theme.of(context)
                       .colorScheme
                       .onSurface
-                      .withOpacity(0.3),
+                      .withValues(alpha: 0.3),
                   size: 28)),
           Divider(
               height: 1,
@@ -451,14 +471,15 @@ class _ProfileTabState extends ConsumerState<ProfileTab> {
   Widget _buildSettingsTile(BuildContext context,
       {required IconData icon,
       required String title,
-      required Widget trailing}) {
+      required Widget trailing,
+      VoidCallback? onTap}) {
     return ListTile(
       contentPadding:
           const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
       leading: Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
-            color: Theme.of(context).primaryColor.withOpacity(0.1),
+            color: Theme.of(context).primaryColor.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(10)),
         child: Icon(icon, color: Theme.of(context).primaryColor),
       ),
@@ -468,7 +489,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab> {
               fontSize: 16,
               color: Theme.of(context).colorScheme.onSurface)),
       trailing: trailing,
-      onTap: () {},
+      onTap: onTap,
     );
   }
 }
