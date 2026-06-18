@@ -29,8 +29,8 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
   bool _videoError = false;
   bool _isPlaying = false;
 
+  // ─── Instructions map (full) ─────────────────────────────────────────
   static const Map<String, List<String>> _exerciseInstructions = {
-    // ... (keep all existing instructions) ...
     'Bird Dog': [
       'Start on all fours with your hands directly under your shoulders and knees under your hips.',
       'Keep your spine neutral and engage your core.',
@@ -159,8 +159,56 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     ],
   };
 
+  // ─── Hold durations ──────────────────────────────────────────────────
+  static const Map<String, String> _holdDurations = {
+    'Bird Dog': '3 sec',
+    'Cat-Cow': '2 sec',
+    'Chest Stretch': '30 sec',
+    'Glute Bridge': '2 sec',
+    'Hip Flexor Stretch': '30 sec',
+    'Neck Rotation': '2 sec',
+    'Right Side Leg Raise': '2 sec',
+    'Side Bending Right': '20 sec',
+    'Thoracic Back Extension': '5 sec',
+    'Tummy Twist': '2 sec',
+  };
+
+  // ─── Seconds per rep ─────────────────────────────────────────────────
+  static const Map<String, int> _secPerRep = {
+    'Bird Dog': 6,
+    'Cat-Cow': 5,
+    'Chest Stretch': 30,
+    'Circumduction': 4,
+    'Dead Bug': 6,
+    'Glute Bridge': 4,
+    'Hip Flexor Stretch': 30,
+    'Left Side Plank': 20,
+    'Leg Lift': 4,
+    'Micro Break Walking': 60,
+    'Neck Rotation': 4,
+    'Plank': 20,
+    'Right Side Leg Raise': 4,
+    'Side Bending Right': 20,
+    'Sit to Stand': 4,
+    'Squatting': 4,
+    'Thoracic Back Extension': 7,
+    'Tummy Twist': 4,
+  };
+
   static const Color _accentColor = Color(0xFF6C63FF);
 
+  // ─── Helper: Calculate total timer ──────────────────────────────────
+  String _calculateTotalTimer(int perSetReps, String title) {
+    // Force 3 sets for every exercise
+    const int sets = 3;
+    final secPerRep = _secPerRep[title] ?? 4;
+    final restSeconds = (sets - 1) * 15; // 30 sec rest between 3 sets
+    final totalSeconds = perSetReps * sets * secPerRep + restSeconds;
+    final mins = (totalSeconds / 60).ceil();
+    return '$mins min';
+  }
+
+  // ─── Lifecycle ──────────────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
@@ -219,20 +267,33 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
             .toList();
   }
 
+  String? _getHoldDuration() => _holdDurations[widget.exercise.title];
+
   @override
   Widget build(BuildContext context) {
     final diffColor = _difficultyColor(widget.exercise.difficultyLevel);
+    final holdDuration = _getHoldDuration();
 
-    // ─── Corrected reps/sets display logic ──────────────────────────
-    // In the main tab (fromWeeklyAssessment = false), show the pill.
-    // If completedReps is available and > 0, use that; otherwise default "10 Reps × 3 Sets".
-    String repsSetsDisplay = '10 Reps × 3 Sets';
+    // ─── Compute per‑set reps for main tab ──────────────────────────────
+    int perSetReps = 10; // default
     if (!widget.fromWeeklyAssessment) {
       if (widget.completedReps != null && widget.completedReps! > 0) {
-        // Calculate: Ceiling(completedReps / 3) Reps × 3 Sets
-        final repsPerSet = (widget.completedReps! / 3).ceil();
-        repsSetsDisplay = '$repsPerSet Reps × 3 Sets';
+        // FIXED: Use ceil() to match exercises_tab.dart behavior
+        perSetReps = (widget.completedReps! / 3).ceil();
+        if (perSetReps < 1) perSetReps = 1;
       }
+    }
+
+    // ─── Reps/sets display (only for main tab) ──────────────────────
+    String repsSetsDisplay = '10 Reps × 3 Sets';
+    if (!widget.fromWeeklyAssessment) {
+      repsSetsDisplay = '$perSetReps Reps × 3 Sets';
+    }
+
+    // ─── Timer label (only for main tab) ─────────────────────────────
+    String timerLabel = '';
+    if (!widget.fromWeeklyAssessment) {
+      timerLabel = _calculateTotalTimer(perSetReps, widget.exercise.title);
     }
 
     return Scaffold(
@@ -323,6 +384,12 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                             label: widget.exercise.difficultyLevel,
                             color: diffColor,
                           ),
+                          if (!widget.fromWeeklyAssessment && timerLabel.isNotEmpty)
+                            _buildImageBadge(
+                              icon: Icons.timer_outlined,
+                              label: timerLabel,
+                              color: Colors.white,
+                            ),
                         ],
                       ),
                     ),
@@ -363,14 +430,26 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  // ── Conditional: either reps/sets pill OR motivational message ──
+                  // ─── Conditional pill row ────────────────────────────
                   if (widget.fromWeeklyAssessment)
                     _buildMotivationalMessage()
                   else
-                    _buildStatPill(
-                      icon: Icons.repeat_rounded,
-                      value: repsSetsDisplay,
-                      label: '',
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: [
+                        _buildStatPill(
+                          icon: Icons.repeat_rounded,
+                          value: repsSetsDisplay,
+                          label: '',
+                        ),
+                        if (holdDuration != null)
+                          _buildStatPill(
+                            icon: Icons.timer_outlined,
+                            value: holdDuration,
+                            label: 'Hold',
+                          ),
+                      ],
                     ),
 
                   const SizedBox(height: 36),
@@ -407,7 +486,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     );
   }
 
-  // ── Motivational message for weekly assessment ──
+  // ─── Motivational message for weekly assessment ──────────────────────
   Widget _buildMotivationalMessage() {
     return Container(
       width: double.infinity,
@@ -459,6 +538,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     );
   }
 
+  // ─── Stat pill ──────────────────────────────────────────────────────────
   Widget _buildStatPill({
     required IconData icon,
     required String value,
@@ -495,6 +575,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     );
   }
 
+  // ─── Image badge ──────────────────────────────────────────────────────
   Widget _buildImageBadge({
     required IconData icon,
     required String label,
@@ -526,6 +607,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     );
   }
 
+  // ─── Video player ──────────────────────────────────────────────────────
   Widget _buildVideoPlayer(BuildContext context) {
     return GestureDetector(
       onTap: _togglePlayPause,
@@ -631,6 +713,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     );
   }
 
+  // ─── Instruction steps ──────────────────────────────────────────────
   List<Widget> _buildInstructionSteps(BuildContext context, List<String> steps) {
     return steps.asMap().entries.map((entry) {
       final stepNum = entry.key + 1;
