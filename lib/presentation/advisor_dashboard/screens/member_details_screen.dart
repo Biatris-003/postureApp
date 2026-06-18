@@ -1106,6 +1106,19 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
                     borderRadius: BorderRadius.circular(12)),
               ),
               onPressed: () async {
+                final appUser = ref.read(authStateProvider);
+                String clinicianId = 'c001';
+                if (appUser != null) {
+                  final clinicianQuery = await FirebaseFirestore.instance
+                      .collection('clinicians')
+                      .where('userId', isEqualTo: appUser.userId)
+                      .limit(1)
+                      .get();
+                  if (clinicianQuery.docs.isNotEmpty) {
+                    clinicianId = clinicianQuery.docs.first.id;
+                  }
+                }
+
                 // Get or create exercise plan
                 final planSnapshot = await FirebaseFirestore.instance
                     .collection('exercisePlans')
@@ -1118,7 +1131,7 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
                       .collection('exercisePlans')
                       .add({
                     'patientId': widget.member.uid,
-                    'clinicianId': 'c001',
+                    'clinicianId': clinicianId,
                     'createdDate': DateTime.now().toIso8601String(),
                     'status': 'active',
                   });

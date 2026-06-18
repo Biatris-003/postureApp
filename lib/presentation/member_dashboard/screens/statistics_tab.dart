@@ -1047,11 +1047,22 @@ Widget _buildPieChart(AnalyticsService service) {
     try {
       // Fetch patient info
       final user = ref.read(authStateProvider);
-      final patientDoc = await FirebaseFirestore.instance
+      if (user == null) {
+        throw Exception("User not logged in");
+      }
+
+      final patientSnapshot = await FirebaseFirestore.instance
           .collection('patients')
-          .doc(user?.uid ?? 'unknown')
+          .where('userId', isEqualTo: user.userId)
+          .limit(1)
           .get();
-      final patient = patientDoc.data()??{};
+
+      if (patientSnapshot.docs.isEmpty) {
+        throw Exception("Patient record not found");
+      }
+
+      final patientDoc = patientSnapshot.docs.first;
+      final patient = patientDoc.data();
 
       final percentages = service.calculatePosturePercentages(_data);
       final counts = service.calculatePostureCounts(_data);
@@ -1362,7 +1373,7 @@ Widget _buildPieChart(AnalyticsService service) {
 
   await FirebaseFirestore.instance.collection('reports').doc(reportId).set({
     'reportId': reportId,
-    'patientId': user?.uid ?? 'unknown',
+    'patientId': patientDoc.id,
     'generatedAt': DateTime.now().toIso8601String(),
     'reportType': _selectedTimeRange == 0
         ? 'daily'

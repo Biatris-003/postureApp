@@ -25,10 +25,30 @@ class _AssignedMembersTabState extends ConsumerState<AssignedMembersTab> {
   Future<void> _loadPatients() async {
     setState(() => _isLoading = true);
     try {
+      final appUser = ref.read(authStateProvider);
+      if (appUser == null) {
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      // Resolve clinician document ID
+      final clinicianQuery = await FirebaseFirestore.instance
+          .collection('clinicians')
+          .where('userId', isEqualTo: appUser.userId)
+          .limit(1)
+          .get();
+
+      if (clinicianQuery.docs.isEmpty) {
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      final clinicianId = clinicianQuery.docs.first.id;
+
       // Load all patients assigned to this clinician
       final snapshot = await FirebaseFirestore.instance
           .collection('patients')
-          .where('clinicianId', isEqualTo: 'c001')
+          .where('clinicianId', isEqualTo: clinicianId)
           .get();
 
       setState(() {

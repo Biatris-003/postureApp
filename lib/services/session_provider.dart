@@ -69,6 +69,8 @@ class SessionState {
     this.timeline = const [],
     this.bestStreakSeconds = 0,
     this.currentStreakStart,
+    this.sensorBatteryLevels = const {},
+    this.sensorConnections = const {},
   });
 
   final SessionStatus status;
@@ -82,6 +84,8 @@ class SessionState {
   final int bestStreakSeconds;
   // Start time of the current upright streak; null when not in upright.
   final DateTime? currentStreakStart;
+  final Map<String, int> sensorBatteryLevels;
+  final Map<String, bool> sensorConnections;
 
   Duration get elapsed =>
       startTime == null ? Duration.zero : DateTime.now().difference(startTime!);
@@ -125,6 +129,8 @@ class SessionState {
     int? bestStreakSeconds,
     DateTime? currentStreakStart,
     bool clearCurrentStreakStart = false,
+    Map<String, int>? sensorBatteryLevels,
+    Map<String, bool>? sensorConnections,
   }) {
     return SessionState(
       status: status ?? this.status,
@@ -137,6 +143,8 @@ class SessionState {
       currentStreakStart: clearCurrentStreakStart
           ? null
           : (currentStreakStart ?? this.currentStreakStart),
+      sensorBatteryLevels: sensorBatteryLevels ?? this.sensorBatteryLevels,
+      sensorConnections: sensorConnections ?? this.sensorConnections,
     );
   }
 }
@@ -181,10 +189,23 @@ class SessionNotifier extends Notifier<SessionState> {
   RealtimeProcessor? _processor;
   StreamSubscription<PredictionResult>? _sub;
   StreamSubscription<Map<String, List<double>>>? _quatSub;
+  StreamSubscription<Map<String, int>>? _batterySub;
+  StreamSubscription<Map<String, bool>>? _connectionSub;
 
   @override
   SessionState build() {
     ref.onDispose(_cleanup);
+
+    ref.listen<Map<String, bool>>(enabledSensorsProvider, (prev, next) {
+      if (_processor != null) {
+        final enabledMacs = next.entries
+            .where((e) => e.value)
+            .map((e) => e.key)
+            .toSet();
+        _processor!.updateEnabledSensors(enabledMacs);
+      }
+    });
+
     return const SessionState();
   }
 
@@ -196,11 +217,27 @@ class SessionNotifier extends Notifier<SessionState> {
     );
 
     _processor = RealtimeProcessor();
-    await _processor!.start();
+    
+    // Read the current enabled configuration
+    final enabledSensors = ref.read(enabledSensorsProvider);
+    final enabledMacs = enabledSensors.entries
+        .where((e) => e.value)
+        .map((e) => e.key)
+        .toSet();
+
+    await _processor!.start(enabledMacs: enabledMacs);
 
     _sub = _processor!.predictions.listen(_onPrediction);
     _quatSub = _processor!.latestQuats.listen((quats) {
       ref.read(latestQuatsProvider.notifier).update(quats);
+    });
+
+    _batterySub = _processor!.batteryStream.listen((batteryMap) {
+      state = state.copyWith(sensorBatteryLevels: batteryMap);
+    });
+
+    _connectionSub = _processor!.connectionStream.listen((connectionMap) {
+      state = state.copyWith(sensorConnections: connectionMap);
     });
   }
 
@@ -324,6 +361,10 @@ class SessionNotifier extends Notifier<SessionState> {
     _sub = null;
     await _quatSub?.cancel();
     _quatSub = null;
+    await _batterySub?.cancel();
+    _batterySub = null;
+    await _connectionSub?.cancel();
+    _connectionSub = null;
     ref.read(latestQuatsProvider.notifier).update(null);
     await _processor?.stop();
     _processor?.dispose();
@@ -333,3 +374,25 @@ class SessionNotifier extends Notifier<SessionState> {
 
 final sessionProvider =
     NotifierProvider<SessionNotifier, SessionState>(SessionNotifier.new);
+
+class EnabledSensorsNotifier extends Notifier<Map<String, bool>> {
+  @override
+  Map<String, bool> build() {
+    return {
+      'ED:35:33:D3:6C:F8': true, // C7
+      'ED:40:FE:65:30:6C': true, // T4
+      'F6:90:CC:01:6D:25': true, // T12
+      'E3:CA:2D:FD:E0:8C': true, // L5
+    };
+  }
+
+  void toggleSensor(String mac) {
+    state = {
+      ...state,
+      mac: !(state[mac] ?? true),
+    };
+  }
+}
+
+final enabledSensorsProvider =
+    NotifierProvider<EnabledSensorsNotifier, Map<String, bool>>(EnabledSensorsNotifier.new);

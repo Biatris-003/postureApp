@@ -4,9 +4,7 @@ import '../../../data/datasources/auth_service_mock.dart';
 import 'signup_screen.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
-  final String initialRole;
-
-  const LoginScreen({super.key, required this.initialRole});
+  const LoginScreen({super.key});
 
   @override
   ConsumerState<LoginScreen> createState() => _LoginScreenState();
@@ -63,8 +61,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isPatient = widget.initialRole == 'Member';
-
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -91,10 +87,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       color: const Color(0xFFE3F2FD),
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: Icon(
-                      isPatient ? Icons.person_rounded : Icons.medical_services_rounded,
+                    child: const Icon(
+                      Icons.lock_person_rounded,
                       size: 60,
-                      color: const Color(0xFF1565C0),
+                      color: Color(0xFF1565C0),
                     ),
                   ),
                 ),
@@ -110,7 +106,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Login as a ${isPatient ? 'Patient' : 'Clinician'}',
+                  'Sign in to continue',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
                 ),
@@ -177,7 +173,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) => SignupScreen(role: widget.initialRole),
+                            builder: (context) => const SignupScreen(),
                           ),
                         );
                       },

@@ -9,6 +9,7 @@ import 'sensor_frame.dart';
 // Command to poll quaternion register 0x51 on WitMotion WT901BLECL.
 // Sensor replies with a 0x71 frame (reg_l=0x51) containing w,x,y,z.
 const List<int> _kQuatCmd = [0xFF, 0xAA, 0x27, 0x51, 0x00];
+const List<int> _kBatCmd = [0xFF, 0xAA, 0x27, 0x64, 0x00];
 
 /// MAC address → anatomical sensor label.
 /// Must match SENSOR_ID_MAP in load_and_predict_realtime.py exactly.
@@ -26,22 +27,44 @@ class BleReceiver {
   BleReceiver();
 
   final _rowController = StreamController<SensorRow>.broadcast();
-
   /// Stream of decoded sensor rows — one per device per notification.
   Stream<SensorRow> get rows => _rowController.stream;
+
+  final _batteryController = StreamController<Map<String, int>>.broadcast();
+  /// Stream of battery percentages per sensor (keyed by MAC address).
+  Stream<Map<String, int>> get batteryStream => _batteryController.stream;
+
+  final _connectionController = StreamController<Map<String, bool>>.broadcast();
+  /// Stream of connection statuses per sensor (keyed by MAC address).
+  Stream<Map<String, bool>> get connectionStream => _connectionController.stream;
 
   final Map<String, DeviceState> _states = {};
   final Map<String, BluetoothDevice> _devices = {};
   final List<StreamSubscription> _subs = [];
   final List<Timer> _timers = [];
 
+  final Map<String, int> _batteryLevels = {};
+  final Map<String, bool> _connectionStates = {};
+  Set<String>? _enabledMacs;
+
   bool _running = false;
 
   // ── Public API ─────────────────────────────────────────────────────────────
 
-  Future<void> start() async {
+  Future<void> start({Set<String>? enabledMacs}) async {
     if (_running) return;
     _running = true;
+    _enabledMacs = enabledMacs;
+
+    // Reset status/battery maps
+    _batteryLevels.clear();
+    _connectionStates.clear();
+    for (final mac in kSensorIdMap.keys) {
+      _connectionStates[mac] = false;
+      _batteryLevels[mac] = 0;
+    }
+    _emitConnectionUpdate();
+    _emitBatteryUpdate();
 
     FlutterBluePlus.setLogLevel(LogLevel.none, color: false);
     await _requestPermissions();
@@ -75,14 +98,54 @@ class BleReceiver {
     }
     _devices.clear();
     _states.clear();
+
+    // Set connection states to offline when stopped
+    for (final mac in kSensorIdMap.keys) {
+      _connectionStates[mac] = false;
+    }
+    _emitConnectionUpdate();
+  }
+
+  void updateEnabledMacs(Set<String> enabledMacs) {
+    _enabledMacs = enabledMacs;
+    // For any sensor that is now disabled, disconnect it immediately
+    for (final mac in kSensorIdMap.keys) {
+      if (!enabledMacs.contains(mac)) {
+        final device = _devices[mac];
+        if (device != null) {
+          try {
+            device.disconnect();
+          } catch (_) {}
+          _devices.remove(mac);
+        }
+        if (_connectionStates[mac] != false) {
+          _connectionStates[mac] = false;
+          _emitConnectionUpdate();
+        }
+      }
+    }
   }
 
   void dispose() {
     stop();
     _rowController.close();
+    _batteryController.close();
+    _connectionController.close();
   }
 
   // ── Internal ───────────────────────────────────────────────────────────────
+
+  void _emitConnectionUpdate() {
+    if (!_connectionController.isClosed) {
+      _connectionController.add(Map.from(_connectionStates));
+    }
+  }
+
+  void _emitBatteryUpdate() {
+    if (!_batteryController.isClosed) {
+      _batteryController.add(Map.from(_batteryLevels));
+    }
+  }
 
   Future<void> _requestPermissions() async {
     await [
@@ -96,12 +159,23 @@ class BleReceiver {
   void _connectDevice(String mac) async {
     final label = kSensorIdMap[mac] ?? mac;
     while (_running) {
+      // Check if this sensor is enabled. If not, sleep and wait until it is.
+      if (_enabledMacs != null && !_enabledMacs!.contains(mac)) {
+        await Future<void>.delayed(const Duration(seconds: 1));
+        continue;
+      }
+
       final device = BluetoothDevice.fromId(mac);
       _devices[mac] = device;
       Timer? quatTimer;
+      Timer? batTimer;
       try {
         try { await device.disconnect(); } catch (_) {}
         await Future<void>.delayed(const Duration(milliseconds: 300));
+
+        if (!_running || (_enabledMacs != null && !_enabledMacs!.contains(mac))) {
+          continue;
+        }
 
         // ignore: avoid_print
         print('[BLE] $label: connecting...');
@@ -109,6 +183,10 @@ class BleReceiver {
           timeout: const Duration(seconds: 20),
           autoConnect: false,
         );
+
+        _connectionStates[mac] = true;
+        _emitConnectionUpdate();
+
         // ignore: avoid_print
         print('[BLE] $label: connected, discovering services...');
 
@@ -132,19 +210,33 @@ class BleReceiver {
         }
 
         if (writeChar != null) {
+          final wc = writeChar;
+
           // ignore: avoid_print
           print('[BLE] $label: polling quaternion via FFE9 every 200ms');
-          final wc = writeChar;
           quatTimer = Timer.periodic(const Duration(milliseconds: 200), (_) async {
-            if (!_running) return;
+            if (!_running || (_enabledMacs != null && !_enabledMacs!.contains(mac))) return;
             try {
               await wc.write(_kQuatCmd, withoutResponse: true);
             } catch (_) {}
           });
           _timers.add(quatTimer);
+
+          // Poll battery on connect, and then every 10 seconds
+          try {
+            await wc.write(_kBatCmd, withoutResponse: true);
+          } catch (_) {}
+
+          batTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
+            if (!_running || (_enabledMacs != null && !_enabledMacs!.contains(mac))) return;
+            try {
+              await wc.write(_kBatCmd, withoutResponse: true);
+            } catch (_) {}
+          });
+          _timers.add(batTimer);
         } else {
           // ignore: avoid_print
-          print('[BLE] $label: write char FFE9 not found — no quat polling');
+          print('[BLE] $label: write char FFE9 not found — no quat/battery polling');
         }
 
         // ignore: avoid_print
@@ -152,14 +244,22 @@ class BleReceiver {
 
         await device.connectionState
             .firstWhere((s) => s == BluetoothConnectionState.disconnected);
+
+        _connectionStates[mac] = false;
+        _emitConnectionUpdate();
+
         // ignore: avoid_print
         print('[BLE] $label: disconnected, retrying...');
       } catch (e) {
+        _connectionStates[mac] = false;
+        _emitConnectionUpdate();
         // ignore: avoid_print
         print('[BLE] $label: error — $e');
       } finally {
         quatTimer?.cancel();
         _timers.remove(quatTimer);
+        batTimer?.cancel();
+        _timers.remove(batTimer);
       }
 
       if (_running) {
@@ -201,6 +301,10 @@ class BleReceiver {
         state.mx = decoded['mx'] as double;
         state.my = decoded['my'] as double;
         state.mz = decoded['mz'] as double;
+      } else if (type == '0x71_bat') {
+        final percentage = decoded['battery'] as int;
+        _batteryLevels[mac] = percentage;
+        _emitBatteryUpdate();
       }
 
       // Emit a row as soon as we have at least acc/gyro/angle.
@@ -264,7 +368,7 @@ class BleReceiver {
       };
     }
 
-    // 0x71 — register-read reply (mag or quat)
+    // 0x71 — register-read reply (mag or quat or bat)
     if (type == 0x71) {
       final regL = frame[2];
       final regH = frame[3];
@@ -288,6 +392,18 @@ class BleReceiver {
           'q1': bd.getInt16(6, Endian.little) * scale,
           'q2': bd.getInt16(8, Endian.little) * scale,
           'q3': bd.getInt16(10, Endian.little) * scale,
+        };
+      }
+
+      // Battery/Power reply (reg 0x64)
+      if (regL == 0x64 && regH == 0x00) {
+        final rawVal = bd.getUint16(4, Endian.little);
+        // Map 680 (6.8V) - 840 (8.4V) to 0 - 100 percentage.
+        double pct = ((rawVal - 680) / (840 - 680)) * 100.0;
+        final pctClamped = pct.clamp(0.0, 100.0).round();
+        return {
+          'type': '0x71_bat',
+          'battery': pctClamped,
         };
       }
 

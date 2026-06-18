@@ -3,44 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../providers/user_settings_provider.dart';
 import '../../../services/session_provider.dart';
 import '../../../services/ble/ble_receiver.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Simple local settings state (in a real app these would be persisted via
-// SharedPreferences or Firestore).
-// ─────────────────────────────────────────────────────────────────────────────
-class _SettingsState {
-  final bool postureAlerts;
-  final bool vibrationFeedback;
-  final bool dailySummary;
-  final bool darkModeOverride;
-  final int alertThresholdMinutes;
 
-  const _SettingsState({
-    this.postureAlerts = true,
-    this.vibrationFeedback = true,
-    this.dailySummary = true,
-    this.darkModeOverride = false,
-    this.alertThresholdMinutes = 5,
-  });
-
-  _SettingsState copyWith({
-    bool? postureAlerts,
-    bool? vibrationFeedback,
-    bool? dailySummary,
-    bool? darkModeOverride,
-    int? alertThresholdMinutes,
-  }) =>
-      _SettingsState(
-        postureAlerts: postureAlerts ?? this.postureAlerts,
-        vibrationFeedback: vibrationFeedback ?? this.vibrationFeedback,
-        dailySummary: dailySummary ?? this.dailySummary,
-        darkModeOverride: darkModeOverride ?? this.darkModeOverride,
-        alertThresholdMinutes:
-            alertThresholdMinutes ?? this.alertThresholdMinutes,
-      );
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sensor battery model – in production you would read this from BLE device
@@ -53,6 +20,7 @@ class _SensorInfo {
   final String location;
   final int batteryPct;
   final bool connected;
+  final bool enabled;
 
   const _SensorInfo({
     required this.mac,
@@ -60,6 +28,7 @@ class _SensorInfo {
     required this.location,
     required this.batteryPct,
     required this.connected,
+    required this.enabled,
   });
 }
 
@@ -75,27 +44,11 @@ class SettingsTab extends ConsumerStatefulWidget {
 
 class _SettingsTabState extends ConsumerState<SettingsTab>
     with SingleTickerProviderStateMixin {
-  _SettingsState _settings = const _SettingsState();
   bool _isTogglingSession = false;
 
   // Pulsing animation for the power button
   late AnimationController _pulseCtrl;
   late Animation<double> _pulseAnim;
-
-  // Simulated battery levels per sensor (keyed by MAC)
-  final Map<String, int> _batteryMap = {
-    'ED:35:33:D3:6C:F8': 82,
-    'ED:40:FE:65:30:6C': 67,
-    'F6:90:CC:01:6D:25': 91,
-    'E3:CA:2D:FD:E0:8C': 55,
-  };
-
-  final Map<String, bool> _connectedMap = {
-    'ED:35:33:D3:6C:F8': false,
-    'ED:40:FE:65:30:6C': false,
-    'F6:90:CC:01:6D:25': false,
-    'E3:CA:2D:FD:E0:8C': false,
-  };
 
   @override
   void initState() {
@@ -115,7 +68,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
     super.dispose();
   }
 
-  List<_SensorInfo> get _sensors {
+  List<_SensorInfo> _getSensors(SessionState session, Map<String, bool> enabledMap) {
     return kSensorIdMap.entries.map((e) {
       final mac = e.key;
       final label = e.value;
@@ -125,12 +78,18 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
         'T12': 'Lower Thoracic',
         'L5': 'Lumbar (Lower Back)',
       };
+      
+      final isEnabled = enabledMap[mac] ?? true;
+      final isConnected = session.sensorConnections[mac] ?? false;
+      final battery = session.sensorBatteryLevels[mac] ?? 0;
+
       return _SensorInfo(
         mac: mac,
         label: label,
         location: locations[label] ?? label,
-        batteryPct: _batteryMap[mac] ?? 0,
-        connected: _connectedMap[mac] ?? false,
+        batteryPct: battery,
+        connected: isEnabled && isConnected,
+        enabled: isEnabled,
       );
     }).toList();
   }
@@ -159,21 +118,10 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
       if (session.status == SessionStatus.idle) {
         await ref.read(sessionProvider.notifier).startSession();
         _pulseCtrl.repeat(reverse: true);
-        // Mark sensors as connected
-        setState(() {
-          for (final mac in _connectedMap.keys) {
-            _connectedMap[mac] = true;
-          }
-        });
       } else {
         ref.read(sessionProvider.notifier).stopSession();
         _pulseCtrl.stop();
         _pulseCtrl.reset();
-        setState(() {
-          for (final mac in _connectedMap.keys) {
-            _connectedMap[mac] = false;
-          }
-        });
       }
     } finally {
       if (mounted) setState(() => _isTogglingSession = false);
@@ -186,9 +134,18 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider);
+    final enabledMap = ref.watch(enabledSensorsProvider);
+    final sensors = _getSensors(session, enabledMap);
     final isActive = session.status != SessionStatus.idle;
     final isStarting = session.status == SessionStatus.starting;
     final primaryColor = Theme.of(context).primaryColor;
+    // Watch settings from Firestore-backed provider
+    final settingsAsync = ref.watch(userSettingsProvider);
+    final settings = settingsAsync.when(
+      data: (s) => s,
+      loading: () => const UserSettings(),
+      error: (err, st) => const UserSettings(),
+    );
 
     // Sync pulse animation with session state
     if (isActive && !_pulseCtrl.isAnimating) {
@@ -272,25 +229,25 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                   // ── Section title ──────────────────────────────────────
                   _sectionTitle(context, 'Sensor Status'),
                   const SizedBox(height: 12),
-                  _buildSensorPanel(context, isActive),
+                  _buildSensorPanel(context, sensors),
                   const SizedBox(height: 28),
 
                   // ── Alerts section ─────────────────────────────────────
                   _sectionTitle(context, 'Alerts & Feedback'),
                   const SizedBox(height: 12),
-                  _buildAlertsCard(context, primaryColor),
+                  _buildAlertsCard(context, primaryColor, settings),
                   const SizedBox(height: 28),
 
                   // ── Alert threshold ────────────────────────────────────
                   _sectionTitle(context, 'Alert Threshold'),
                   const SizedBox(height: 12),
-                  _buildThresholdCard(context, primaryColor),
+                  _buildThresholdCard(context, primaryColor, settings),
                   const SizedBox(height: 28),
 
                   // ── App preferences ────────────────────────────────────
                   _sectionTitle(context, 'App Preferences'),
                   const SizedBox(height: 12),
-                  _buildPreferencesCard(context, primaryColor),
+                  _buildPreferencesCard(context, primaryColor, settings),
                   const SizedBox(height: 40),
                 ],
               ),
@@ -537,7 +494,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   // ─────────────────────────────────────────────────────────────────────────
   // Sensor Panel
   // ─────────────────────────────────────────────────────────────────────────
-  Widget _buildSensorPanel(BuildContext context, bool isActive) {
+  Widget _buildSensorPanel(BuildContext context, List<_SensorInfo> sensors) {
     return Container(
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
@@ -552,9 +509,9 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
       ),
       child: Column(
         children: [
-          for (int i = 0; i < _sensors.length; i++) ...[
-            _buildSensorTile(context, _sensors[i], isActive),
-            if (i < _sensors.length - 1)
+          for (int i = 0; i < sensors.length; i++) ...[
+            _buildSensorTile(context, sensors[i]),
+            if (i < sensors.length - 1)
               Divider(
                   height: 1,
                   indent: 72,
@@ -566,12 +523,30 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
     );
   }
 
-  Widget _buildSensorTile(
-      BuildContext context, _SensorInfo sensor, bool isActive) {
+  Widget _buildSensorTile(BuildContext context, _SensorInfo sensor) {
     final battery = sensor.batteryPct;
-    final bColor = _batteryColor(battery);
-    final bIcon = _batteryIcon(battery);
-    final connected = isActive;
+    final isEnabled = sensor.enabled;
+    final connected = sensor.connected;
+
+    // battery details styling
+    final bColor = isEnabled 
+        ? _batteryColor(battery) 
+        : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3);
+    final bIcon = isEnabled 
+        ? _batteryIcon(battery) 
+        : Icons.battery_unknown_rounded;
+
+    final statusText = !isEnabled 
+        ? 'Disabled' 
+        : connected 
+            ? 'Connected' 
+            : 'Offline';
+
+    final statusColor = !isEnabled
+        ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4)
+        : connected
+            ? const Color(0xFF10B981)
+            : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
@@ -585,7 +560,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
               color: (connected
                       ? Theme.of(context).primaryColor
                       : Theme.of(context).colorScheme.onSurface)
-                  .withValues(alpha: 0.1),
+                  .withValues(alpha: isEnabled ? 0.1 : 0.05),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Center(
@@ -599,7 +574,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                       : Theme.of(context)
                           .colorScheme
                           .onSurface
-                          .withValues(alpha: 0.35),
+                          .withValues(alpha: isEnabled ? 0.35 : 0.2),
                 ),
               ),
             ),
@@ -615,7 +590,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 15,
-                    color: Theme.of(context).colorScheme.onSurface,
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: isEnabled ? 1.0 : 0.5),
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -626,12 +601,23 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                     color: Theme.of(context)
                         .colorScheme
                         .onSurface
-                        .withValues(alpha: 0.5),
+                        .withValues(alpha: isEnabled ? 0.5 : 0.3),
                   ),
                 ),
               ],
             ),
           ),
+
+          // Switch to enable/disable
+          Switch(
+            value: isEnabled,
+            activeThumbColor: Theme.of(context).primaryColor,
+            onChanged: (val) {
+              ref.read(enabledSensorsProvider.notifier).toggleSensor(sensor.mac);
+            },
+          ),
+          const SizedBox(width: 14),
+
           // Battery + status
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
@@ -642,7 +628,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                   Icon(bIcon, size: 18, color: bColor),
                   const SizedBox(width: 4),
                   Text(
-                    '$battery%',
+                    isEnabled ? '$battery%' : 'N/A',
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w800,
@@ -657,23 +643,15 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                 padding:
                     const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: (connected
-                          ? const Color(0xFF10B981)
-                          : Theme.of(context).colorScheme.onSurface)
-                      .withValues(alpha: 0.1),
+                  color: statusColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
-                  connected ? 'Connected' : 'Offline',
+                  statusText,
                   style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.w700,
-                    color: connected
-                        ? const Color(0xFF10B981)
-                        : Theme.of(context)
-                            .colorScheme
-                            .onSurface
-                            .withValues(alpha: 0.35),
+                    color: statusColor,
                   ),
                 ),
               ),
@@ -687,33 +665,33 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   // ─────────────────────────────────────────────────────────────────────────
   // Alerts Card
   // ─────────────────────────────────────────────────────────────────────────
-  Widget _buildAlertsCard(BuildContext context, Color primaryColor) {
+  Widget _buildAlertsCard(BuildContext context, Color primaryColor, UserSettings settings) {
     return _buildToggleCard(context, [
       _ToggleItem(
         icon: Icons.notifications_active_outlined,
         title: 'Posture Alerts',
         subtitle: 'Notify when bad posture is detected',
-        value: _settings.postureAlerts,
+        value: settings.postureAlerts,
         onChanged: (v) =>
-            setState(() => _settings = _settings.copyWith(postureAlerts: v)),
+            ref.read(userSettingsProvider.notifier).setPostureAlerts(v),
         primaryColor: primaryColor,
       ),
       _ToggleItem(
         icon: Icons.vibration_rounded,
         title: 'Vibration Feedback',
         subtitle: 'Haptic pulse when posture worsens',
-        value: _settings.vibrationFeedback,
-        onChanged: (v) => setState(
-            () => _settings = _settings.copyWith(vibrationFeedback: v)),
+        value: settings.vibrationFeedback,
+        onChanged: (v) =>
+            ref.read(userSettingsProvider.notifier).setVibrationFeedback(v),
         primaryColor: primaryColor,
       ),
       _ToggleItem(
         icon: Icons.summarize_outlined,
         title: 'Daily Summary',
         subtitle: 'Evening report of your posture day',
-        value: _settings.dailySummary,
+        value: settings.dailySummary,
         onChanged: (v) =>
-            setState(() => _settings = _settings.copyWith(dailySummary: v)),
+            ref.read(userSettingsProvider.notifier).setDailySummary(v),
         primaryColor: primaryColor,
       ),
     ]);
@@ -722,7 +700,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   // ─────────────────────────────────────────────────────────────────────────
   // Alert Threshold Card
   // ─────────────────────────────────────────────────────────────────────────
-  Widget _buildThresholdCard(BuildContext context, Color primaryColor) {
+  Widget _buildThresholdCard(BuildContext context, Color primaryColor, UserSettings settings) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -777,7 +755,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                 ),
               ),
               Text(
-                '${_settings.alertThresholdMinutes} min',
+                '${settings.alertThresholdMinutes} min',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w900,
@@ -798,12 +776,12 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
               trackHeight: 5,
             ),
             child: Slider(
-              value: _settings.alertThresholdMinutes.toDouble(),
+              value: settings.alertThresholdMinutes.toDouble(),
               min: 1,
               max: 15,
               divisions: 14,
-              onChanged: (v) => setState(() => _settings =
-                  _settings.copyWith(alertThresholdMinutes: v.round())),
+              onChanged: (v) =>
+                  ref.read(userSettingsProvider.notifier).setAlertThreshold(v.round()),
             ),
           ),
           Row(
@@ -835,15 +813,15 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   // ─────────────────────────────────────────────────────────────────────────
   // App Preferences Card
   // ─────────────────────────────────────────────────────────────────────────
-  Widget _buildPreferencesCard(BuildContext context, Color primaryColor) {
+  Widget _buildPreferencesCard(BuildContext context, Color primaryColor, UserSettings settings) {
     return _buildToggleCard(context, [
       _ToggleItem(
         icon: Icons.dark_mode_outlined,
-        title: 'Dark Mode Override',
+        title: 'Dark Mode',
         subtitle: 'Force dark theme regardless of system',
-        value: _settings.darkModeOverride,
-        onChanged: (v) => setState(
-            () => _settings = _settings.copyWith(darkModeOverride: v)),
+        value: settings.darkModeOverride,
+        onChanged: (v) =>
+            ref.read(userSettingsProvider.notifier).setDarkModeOverride(v),
         primaryColor: primaryColor,
       ),
     ]);

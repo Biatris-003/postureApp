@@ -3,15 +3,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/datasources/auth_service_mock.dart';
 
 class SignupScreen extends ConsumerStatefulWidget {
-  final String role; // 'Member' or 'Advisor'
-
-  const SignupScreen({super.key, required this.role});
+  const SignupScreen({super.key});
 
   @override
   ConsumerState<SignupScreen> createState() => _SignupScreenState();
 }
 
 class _SignupScreenState extends ConsumerState<SignupScreen> {
+  String _selectedRole = 'Member'; // 'Member' (Patient) or 'Advisor' (Clinician)
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -38,7 +37,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
       'contactEmail': _emailController.text,
     };
 
-    if (widget.role == 'Member') {
+    if (_selectedRole == 'Member') {
       profileData.addAll({
         'dateOfBirth': _dobController.text,
         'gender': _gender,
@@ -55,7 +54,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
       final user = await ref.read(authServiceProvider).signUp(
         email: _emailController.text,
         password: _passwordController.text,
-        role: widget.role,
+        role: _selectedRole,
         profileData: profileData,
       );
       ref.read(authStateProvider.notifier).setUser(user);
@@ -72,9 +71,88 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
     }
   }
 
+  Widget _buildRoleSelector() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      padding: const EdgeInsets.all(4),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildRoleButton(
+              role: 'Member',
+              label: 'Patient',
+              icon: Icons.person_outline,
+            ),
+          ),
+          Expanded(
+            child: _buildRoleButton(
+              role: 'Advisor',
+              label: 'Clinician',
+              icon: Icons.medical_services_outlined,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRoleButton({
+    required String role,
+    required String label,
+    required IconData icon,
+  }) {
+    final isSelected = _selectedRole == role;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _selectedRole = role;
+        });
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF1565C0) : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFF1565C0).withOpacity(0.3),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  )
+                ]
+              : [],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              color: isSelected ? Colors.white : Colors.grey.shade600,
+              size: 20,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? Colors.white : Colors.grey.shade600,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final isPatient = widget.role == 'Member';
+    final isPatient = _selectedRole == 'Member';
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -104,7 +182,9 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                 'Join the Smart Posture community today',
                 style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 24),
+              _buildRoleSelector(),
+              const SizedBox(height: 24),
               
               // Common Field: Full Name
               _buildTextField(

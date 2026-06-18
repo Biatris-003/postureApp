@@ -5,6 +5,7 @@ import 'data/datasources/auth_service_mock.dart';
 import 'presentation/auth/screens/welcome_screen.dart';
 import 'presentation/member_dashboard/screens/member_dashboard_screen.dart';
 import 'presentation/advisor_dashboard/screens/advisor_dashboard_screen.dart';
+import 'providers/user_settings_provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 
@@ -50,15 +51,20 @@ class SmartPostureApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isBypassed = ref.watch(bypassErrorProvider);
     final authState = ref.watch(authStateProvider);
+    final settingsAsync = ref.watch(userSettingsProvider);
+    final darkMode = settingsAsync.when(
+      data: (s) => s.darkModeOverride,
+      loading: () => false,
+      error: (err, st) => false,
+    );
 
     return MaterialApp(
       title: 'Smart Posture Monitoring System',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
-      themeMode: ThemeMode.system,
+      themeMode: darkMode ? ThemeMode.dark : ThemeMode.system,
       home: authState == null
           ? const WelcomeScreen()
           : (authState.role == 'Advisor'

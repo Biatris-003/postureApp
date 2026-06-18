@@ -51,6 +51,9 @@ class RealtimeProcessor {
   final _quatController = StreamController<Map<String, List<double>>>.broadcast();
   Stream<Map<String, List<double>>> get latestQuats => _quatController.stream;
 
+  Stream<Map<String, int>> get batteryStream => _bleReceiver.batteryStream;
+  Stream<Map<String, bool>> get connectionStream => _bleReceiver.connectionStream;
+
   // Sensor label → latest row for that sensor in this "sync round"
   final Map<String, Map<String, double>> _latest = {};
   // All 4-sensor synced wide rows
@@ -58,9 +61,10 @@ class RealtimeProcessor {
 
   int _syncedSinceLastInfer = 0;
 
-  BleReceiver? _bleReceiver;
+  final BleReceiver _bleReceiver = BleReceiver();
   StreamSubscription<SensorRow>? _rowSub;
   TflitePredictor? _predictor;
+  Set<String>? _enabledMacs;
 
   bool _running = false;
   bool _inferring = false;
@@ -69,33 +73,38 @@ class RealtimeProcessor {
 
   // ── Public API ─────────────────────────────────────────────────────────────
 
-  Future<void> start() async {
+  Future<void> start({Set<String>? enabledMacs}) async {
     if (_running) return;
     _running = true;
+    _enabledMacs = enabledMacs;
 
     _predictor = await TflitePredictor.instance();
 
-    _bleReceiver = BleReceiver();
-    _rowSub = _bleReceiver!.rows.listen(_onRow);
-    await _bleReceiver!.start();
+    _rowSub = _bleReceiver.rows.listen(_onRow);
+    await _bleReceiver.start(enabledMacs: enabledMacs);
   }
 
   Future<void> stop() async {
     _running = false;
     await _rowSub?.cancel();
-    await _bleReceiver?.stop();
+    _rowSub = null;
+    await _bleReceiver.stop();
     _latest.clear();
     _buffer.clear();
     _syncedSinceLastInfer = 0;
     _inferring = false;
   }
 
+  void updateEnabledSensors(Set<String> enabledMacs) {
+    _enabledMacs = enabledMacs;
+    _bleReceiver.updateEnabledMacs(enabledMacs);
+  }
 
   void dispose() {
     stop();
     _predController.close();
     _quatController.close();
-    _bleReceiver?.dispose();
+    _bleReceiver.dispose();
     _predictor?.dispose();
   }
 
@@ -104,14 +113,23 @@ class RealtimeProcessor {
   void _onRow(SensorRow row) {
     _latest[row.sensorId] = row.toWideColumns();
 
-    // Only proceed when we have a fresh reading from all 4 sensors
-    if (_latest.length < _sensorOrder.length) return;
-    if (!_sensorOrder.every(_latest.containsKey)) return;
+    final enabledSensors = _enabledMacs
+            ?.map((mac) => kSensorIdMap[mac])
+            .whereType<String>()
+            .toSet() ??
+        _sensorOrder.toSet();
+
+    // Only proceed when we have a fresh reading from all enabled sensors
+    if (!enabledSensors.every(_latest.containsKey)) return;
 
     // Build one merged wide-format row
     final merged = <String, double>{};
     for (final s in _sensorOrder) {
-      merged.addAll(_latest[s]!);
+      if (enabledSensors.contains(s)) {
+        merged.addAll(_latest[s]!);
+      } else {
+        merged.addAll(_defaultWideColumns(s));
+      }
     }
     _buffer.add(merged);
     _latest.clear(); // reset for next sync round
@@ -137,6 +155,25 @@ class RealtimeProcessor {
       _maybeInfer();
     }
   }
+
+  static Map<String, double> _defaultWideColumns(String sensorId) => {
+        '${sensorId}_Acceleration X(g)': 0.0,
+        '${sensorId}_Acceleration Y(g)': 0.0,
+        '${sensorId}_Acceleration Z(g)': 0.0,
+        '${sensorId}_Angular velocity X(°/s)': 0.0,
+        '${sensorId}_Angular velocity Y(°/s)': 0.0,
+        '${sensorId}_Angular velocity Z(°/s)': 0.0,
+        '${sensorId}_Angle X(°)': 0.0,
+        '${sensorId}_Angle Y(°)': 0.0,
+        '${sensorId}_Angle Z(°)': 0.0,
+        '${sensorId}_Magnetic field X(uT)': 0.0,
+        '${sensorId}_Magnetic field Y(uT)': 0.0,
+        '${sensorId}_Magnetic field Z(uT)': 0.0,
+        '${sensorId}_Quaternions 0()': 1.0,
+        '${sensorId}_Quaternions 1()': 0.0,
+        '${sensorId}_Quaternions 2()': 0.0,
+        '${sensorId}_Quaternions 3()': 0.0,
+      };
 
   Future<void> _maybeInfer() async {
     if (_inferring || _predictor == null) return;

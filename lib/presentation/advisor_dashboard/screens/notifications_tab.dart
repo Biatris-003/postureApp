@@ -1,16 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../../data/datasources/auth_service_mock.dart';
 
-class NotificationsTab extends StatefulWidget {
+class NotificationsTab extends ConsumerStatefulWidget {
   const NotificationsTab({super.key});
 
   @override
-  State<NotificationsTab> createState() => _NotificationsTabState();
+  ConsumerState<NotificationsTab> createState() => _NotificationsTabState();
 }
 
-class _NotificationsTabState extends State<NotificationsTab> {
+class _NotificationsTabState extends ConsumerState<NotificationsTab> {
   List<Map<String, dynamic>> _notifications = [];
   bool _isLoading = true;
+  String? _clinicianId;
 
   // Notification types config
   final _typeConfig = {
@@ -44,62 +47,106 @@ class _NotificationsTabState extends State<NotificationsTab> {
   @override
   void initState() {
     super.initState();
-    _loadNotifications();
-    _seedMockNotificationsIfEmpty();
+    _resolveClinicianAndLoad();
+  }
+
+  Future<void> _resolveClinicianAndLoad() async {
+    setState(() => _isLoading = true);
+    try {
+      final appUser = ref.read(authStateProvider);
+      if (appUser == null) {
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      final query = await FirebaseFirestore.instance
+          .collection('clinicians')
+          .where('userId', isEqualTo: appUser.userId)
+          .limit(1)
+          .get();
+
+      if (query.docs.isEmpty) {
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      _clinicianId = query.docs.first.id;
+      await _seedMockNotificationsIfEmpty();
+      await _loadNotifications();
+    } catch (e) {
+      setState(() => _isLoading = false);
+    }
   }
 
   // Seed some mock notifications so the page isn't empty
   Future<void> _seedMockNotificationsIfEmpty() async {
+    if (_clinicianId == null) return;
+
     final snapshot = await FirebaseFirestore.instance
         .collection('notifications')
-        .where('clinicianId', isEqualTo: 'c001')
+        .where('clinicianId', isEqualTo: _clinicianId)
         .get();
 
     if (snapshot.docs.isNotEmpty) return;
 
+    // Try to get a real patient name from clinician's assigned patients
+    final patientsSnapshot = await FirebaseFirestore.instance
+        .collection('patients')
+        .where('clinicianId', isEqualTo: _clinicianId)
+        .limit(1)
+        .get();
+
+    String patientId = 'p001';
+    String patientName = 'Sara Ahmed';
+    if (patientsSnapshot.docs.isNotEmpty) {
+      final doc = patientsSnapshot.docs.first;
+      patientId = doc.id;
+      patientName = doc.data()['fullName'] ?? 'Sara Ahmed';
+    }
+
     final mockNotifications = [
       {
-        'clinicianId': 'c001',
-        'patientId': 'p001',
-        'patientName': 'Sara Ahmed',
+        'clinicianId': _clinicianId,
+        'patientId': patientId,
+        'patientName': patientName,
         'type': 'new_report',
-        'message': 'Sara Ahmed has generated a new weekly posture report.',
+        'message': '$patientName has generated a new weekly posture report.',
         'timestamp': DateTime.now().subtract(const Duration(minutes: 10)).toIso8601String(),
         'isRead': false,
       },
       {
-        'clinicianId': 'c001',
-        'patientId': 'p001',
-        'patientName': 'Sara Ahmed',
+        'clinicianId': _clinicianId,
+        'patientId': patientId,
+        'patientName': patientName,
         'type': 'bad_posture_streak',
-        'message': 'Sara Ahmed has been in poor posture for over 2 hours today.',
+        'message': '$patientName has been in poor posture for over 2 hours today.',
         'timestamp': DateTime.now().subtract(const Duration(hours: 2)).toIso8601String(),
         'isRead': false,
       },
       {
-        'clinicianId': 'c001',
-        'patientId': 'p001',
-        'patientName': 'Sara Ahmed',
+        'clinicianId': _clinicianId,
+        'patientId': patientId,
+        'patientName': patientName,
         'type': 'exercise_completed',
-        'message': 'Sara Ahmed completed all exercises for today.',
+        'message': '$patientName completed all exercises for today.',
         'timestamp': DateTime.now().subtract(const Duration(hours: 5)).toIso8601String(),
         'isRead': true,
       },
       {
-        'clinicianId': 'c001',
-        'patientId': 'p001',
-        'patientName': 'Sara Ahmed',
+        'clinicianId': _clinicianId,
+        'patientId': patientId,
+        'patientName': patientName,
         'type': 'low_compliance',
-        'message': 'Sara Ahmed\'s exercise compliance dropped to 40% this week.',
+        'message': '$patientName\'s exercise compliance dropped to 40% this week.',
         'timestamp': DateTime.now().subtract(const Duration(days: 1)).toIso8601String(),
         'isRead': true,
       },
       {
-        'clinicianId': 'c001',
-        'patientId': 'p001',
-        'patientName': 'Sara Ahmed',
+        'clinicianId': _clinicianId,
+        'patientId': patientId,
+        'patientName': patientName,
         'type': 'new_report',
-        'message': 'Sara Ahmed generated a monthly posture analysis report.',
+        'message': '$patientName generated a monthly posture analysis report.',
         'timestamp': DateTime.now().subtract(const Duration(days: 2)).toIso8601String(),
         'isRead': true,
       },
@@ -108,16 +155,15 @@ class _NotificationsTabState extends State<NotificationsTab> {
     for (final n in mockNotifications) {
       await FirebaseFirestore.instance.collection('notifications').add(n);
     }
-
-    _loadNotifications();
   }
 
   Future<void> _loadNotifications() async {
+    if (_clinicianId == null) return;
     setState(() => _isLoading = true);
     try {
       final snapshot = await FirebaseFirestore.instance
           .collection('notifications')
-          .where('clinicianId', isEqualTo: 'c001')
+          .where('clinicianId', isEqualTo: _clinicianId)
           .orderBy('timestamp', descending: true)
           .get();
 
