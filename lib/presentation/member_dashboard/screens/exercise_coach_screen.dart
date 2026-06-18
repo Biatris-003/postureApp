@@ -5,12 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../utils/exercise_constants.dart';
 import '../../../providers/exercise_progress_provider.dart';
 
-/// Maps exercise titles (lowercase) → coach exercise IDs in exercises.js
-/// Now uses the global map from exercise_constants.dart
-
 class ExerciseCoachScreen extends ConsumerStatefulWidget {
   final String exerciseTitle;
-  final bool trackReps; // NEW: whether to save reps
+  final bool trackReps;
 
   const ExerciseCoachScreen({
     super.key,
@@ -29,7 +26,7 @@ class _ExerciseCoachScreenState extends ConsumerState<ExerciseCoachScreen>
   bool _permissionGranted = false;
   bool _permissionDenied = false;
   bool _webViewReady = false;
-  int _completedReps = 0; // NEW: holds the latest rep count from JS
+  int _completedReps = 0;
 
   String? get _coachId => exerciseTitleToCoachId[widget.exerciseTitle];
 
@@ -60,7 +57,6 @@ class _ExerciseCoachScreenState extends ConsumerState<ExerciseCoachScreen>
       ))
       ..loadFlutterAsset('assets/exercise-coach/index.html');
 
-    // ─── Add JavaScript channel only if tracking reps ───
     if (widget.trackReps) {
       controller.addJavaScriptChannel(
         'RepCounter',
@@ -80,7 +76,6 @@ class _ExerciseCoachScreenState extends ConsumerState<ExerciseCoachScreen>
     setState(() => _webViewReady = true);
     final id = _coachId;
     if (id == null) return;
-    // Short delay to let JS finish initialising
     await Future.delayed(const Duration(milliseconds: 700));
     if (!mounted) return;
     await _controller.runJavaScript(
@@ -93,7 +88,6 @@ class _ExerciseCoachScreenState extends ConsumerState<ExerciseCoachScreen>
     );
   }
 
-  // ─── Save reps and pop ──────────────────────────────────────────
   Future<void> _saveAndPop() async {
     if (widget.trackReps && _completedReps > 0 && _coachId != null) {
       final notifier = ref.read(exerciseProgressNotifierProvider.notifier);
@@ -107,7 +101,7 @@ class _ExerciseCoachScreenState extends ConsumerState<ExerciseCoachScreen>
     return WillPopScope(
       onWillPop: () async {
         await _saveAndPop();
-        return false; // we already popped
+        return false;
       },
       child: Scaffold(
         backgroundColor: Colors.black,
@@ -124,7 +118,6 @@ class _ExerciseCoachScreenState extends ConsumerState<ExerciseCoachScreen>
           ),
           elevation: 0,
           actions: [
-            // ─── Finish button only when tracking ───
             if (widget.trackReps)
               IconButton(
                 icon: const Icon(Icons.check_circle_outline_rounded),
@@ -139,7 +132,6 @@ class _ExerciseCoachScreenState extends ConsumerState<ExerciseCoachScreen>
   }
 
   Widget _buildBody() {
-    // ── Permission Denied ──────────────────────────────────────────
     if (_permissionDenied) {
       return Center(
         child: Padding(
@@ -192,7 +184,6 @@ class _ExerciseCoachScreenState extends ConsumerState<ExerciseCoachScreen>
       );
     }
 
-    // ── Requesting Permission ──────────────────────────────────────
     if (!_permissionGranted) {
       return const Center(
         child: Column(
@@ -209,32 +200,67 @@ class _ExerciseCoachScreenState extends ConsumerState<ExerciseCoachScreen>
       );
     }
 
-    // ── WebView (with loading overlay) ─────────────────────────────
-    return Stack(
+    // ── Body with improved banner (only when tracking) ──
+    return Column(
       children: [
-        WebViewWidget(controller: _controller),
-        if (!_webViewReady)
+        if (widget.trackReps)
           Container(
-            color: Colors.black,
-            child: const Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(color: Color(0xFF10b981)),
-                  SizedBox(height: 20),
-                  Text(
-                    'Loading AI exercise coach…',
-                    style: TextStyle(color: Colors.white60, fontSize: 16),
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF10b981).withOpacity(0.2),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFF10b981).withOpacity(0.3)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.flag_rounded, color: Color(0xFF10b981), size: 20),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Text(
+                    'DO AS MUCH CORRECT REPS AS YOU CAN',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      letterSpacing: 0.5,
+                    ),
+                    textAlign: TextAlign.center,
                   ),
-                  SizedBox(height: 8),
-                  Text(
-                    'Make sure you are connected to the internet.',
-                    style: TextStyle(color: Colors.white38, fontSize: 13),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
+        Expanded(
+          child: Stack(
+            children: [
+              WebViewWidget(controller: _controller),
+              if (!_webViewReady)
+                Container(
+                  color: Colors.black,
+                  child: const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircularProgressIndicator(color: Color(0xFF10b981)),
+                        SizedBox(height: 20),
+                        Text(
+                          'Loading AI exercise coach…',
+                          style: TextStyle(color: Colors.white60, fontSize: 16),
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          'Make sure you are connected to the internet.',
+                          style: TextStyle(color: Colors.white38, fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
       ],
     );
   }

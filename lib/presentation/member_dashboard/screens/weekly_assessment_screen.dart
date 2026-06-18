@@ -7,7 +7,9 @@ import '../../../domain/entities/exercises/exercise.dart';
 import 'exercise_detail_screen.dart';
 import 'statistics_tab.dart';
 import 'exercise_coach_screen.dart';
-import '../../../utils/exercise_constants.dart'; // <-- new import
+import '../../../utils/exercise_constants.dart';
+import '../../../providers/exercise_progress_provider.dart'; // new
+
 
 class WeeklyAssessmentScreen extends ConsumerWidget {
   const WeeklyAssessmentScreen({Key? key}) : super(key: key);
@@ -24,6 +26,9 @@ class WeeklyAssessmentScreen extends ConsumerWidget {
 
     final mappedExercises = ref.watch(exerciseProvider);
     final defaultExercises = mappedExercises[userId] ?? [];
+
+    // ─── Read progress for display ──────────────────────────────
+    final progress = ref.watch(exerciseProgressNotifierProvider);
 
     final List<Exercise> exercises = defaultExercises;
 
@@ -87,7 +92,7 @@ class WeeklyAssessmentScreen extends ConsumerWidget {
                         final exercise = exercises[index];
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 24),
-                          child: _buildExerciseCard(context, exercise),
+                          child: _buildExerciseCard(context, exercise, progress),
                         );
                       },
                       childCount: exercises.length,
@@ -110,20 +115,31 @@ class WeeklyAssessmentScreen extends ConsumerWidget {
     }
   }
 
-  Widget _buildExerciseCard(BuildContext context, Exercise exercise) {
+  Widget _buildExerciseCard(
+      BuildContext context, Exercise exercise, Map<String, int> progress) {
     final diffColor = _difficultyColor(exercise.difficultyLevel);
 
-    // Determine if this exercise is one of the four that can track reps
+    // Determine if this exercise is tracked
     final isTracked = trackedExerciseTitles.contains(exercise.title);
+
+    // Get completed reps if any (for display)
+    final coachId = isTracked ? exerciseTitleToCoachId[exercise.title] : null;
+    final completedReps = (coachId != null && progress.containsKey(coachId))
+        ? progress[coachId]
+        : null;
 
     return GestureDetector(
       onTap: () {
+        // ─── Open the detail screen ────────────────────────────────────
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => ExerciseCoachScreen(
-              exerciseTitle: exercise.title,
-              trackReps: isTracked, // <-- pass flag
+            builder: (context) => ExerciseDetailScreen(
+              exercise: exercise,
+              heroTag: 'weekly_exercise_image_${exercise.id}',
+              isTracked: isTracked,   // true for the 4, false for others
+              completedReps: completedReps,
+              fromWeeklyAssessment: true, // <-- weekly assessment mode
             ),
           ),
         );
@@ -219,46 +235,8 @@ class WeeklyAssessmentScreen extends ConsumerWidget {
                     ),
                     const SizedBox(height: 14),
                     Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        Icon(Icons.repeat_rounded,
-                            color: Colors.white.withValues(alpha: 0.85),
-                            size: 16),
-                        const SizedBox(width: 5),
-                        Text(
-                          exercise.reps,
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.9),
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        Icon(Icons.layers_rounded,
-                            color: Colors.white.withValues(alpha: 0.85),
-                            size: 16),
-                        const SizedBox(width: 5),
-                        Text(
-                          exercise.sets,
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.9),
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        Icon(Icons.timer_outlined,
-                            color: Colors.white.withValues(alpha: 0.85),
-                            size: 16),
-                        const SizedBox(width: 5),
-                        Text(
-                          exercise.duration,
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.9),
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
-                        ),
-                        const Spacer(),
                         Container(
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(

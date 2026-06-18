@@ -8,32 +8,11 @@ import 'exercise_detail_screen.dart';
 import 'statistics_tab.dart';
 import 'rula_assessment_screen.dart';
 import 'weekly_assessment_screen.dart';
-import '../../../utils/exercise_constants.dart'; // NEW import
-import '../../../providers/exercise_progress_provider.dart'; // NEW import
+import '../../../utils/exercise_constants.dart';
+import '../../../providers/exercise_progress_provider.dart';
 
 class ExercisesTab extends ConsumerWidget {
   const ExercisesTab({Key? key}) : super(key: key);
-
-  static const Map<String, int> _secPerRep = {
-    'Bird Dog': 6,
-    'Cat-Cow': 5,
-    'Chest Stretch': 30,
-    'Circumduction': 4,
-    'Dead Bug': 6,
-    'Glute Bridge': 4,
-    'Hip Flexor Stretch': 30,
-    'Left Side Plank': 20,
-    'Leg Lift': 4,
-    'Micro Break Walking': 60,
-    'Neck Rotation': 4,
-    'Plank': 20,
-    'Right Side Leg Raise': 4,
-    'Side Bending Right': 20,
-    'Sit to Stand': 4,
-    'Squatting': 4,
-    'Thoracic Back Extension': 7,
-    'Tummy Twist': 4,
-  };
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -49,7 +28,7 @@ class ExercisesTab extends ConsumerWidget {
     final mappedExercises = ref.watch(exerciseProvider);
     final defaultExercises = mappedExercises[userId] ?? [];
 
-    // ─── NEW: read progress ──────────────────────────────────
+    // ─── Read progress for display ──────────────────────────────
     final progress = ref.watch(exerciseProgressNotifierProvider);
 
     final List<Exercise> exercises = defaultExercises;
@@ -78,7 +57,6 @@ class ExercisesTab extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // ── Title row with assessment buttons ────────────────
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
@@ -152,21 +130,6 @@ class ExercisesTab extends ConsumerWidget {
     );
   }
 
-  static String _clean(String raw) =>
-      raw.replaceAll(RegExp(r'\s*(reps?|sets?)', caseSensitive: false), '').trim();
-
-  String _calculateTotalTimer(String repsRaw, String setsRaw, String title) {
-    final reps = int.tryParse(_clean(repsRaw)) ?? 10;
-    final sets = int.tryParse(_clean(setsRaw)) ?? 1;
-    final secPerRep = _secPerRep[title] ?? 4;
-
-    final restSeconds = sets > 1 ? (sets - 1) * 15 : 0;
-    final totalSeconds = reps * sets * secPerRep + restSeconds;
-
-    final mins = (totalSeconds / 60).ceil();
-    return '$mins min';
-  }
-
   Color _difficultyColor(String level) {
     switch (level.toLowerCase()) {
       case 'intermediate':
@@ -181,31 +144,38 @@ class ExercisesTab extends ConsumerWidget {
   Widget _buildExerciseCard(
       BuildContext context, Exercise exercise, Map<String, int> progress) {
     final diffColor = _difficultyColor(exercise.difficultyLevel);
-    final timerLabel = _calculateTotalTimer(
-      exercise.reps,
-      exercise.sets,
-      exercise.title,
-    );
 
-    // ─── Determine if this exercise is tracked ──────────────────
+    // Determine if this exercise is one of the 4 tracked (for display only)
     final isTracked = trackedExerciseTitles.contains(exercise.title);
-    String repsDisplay = '${_clean(exercise.reps)}×${_clean(exercise.sets)} Reps';
+    String repsValue = '10';
     if (isTracked) {
       final coachId = exerciseTitleToCoachId[exercise.title];
-      if (coachId != null) {
-        final completedReps = progress[coachId];
-        if (completedReps != null && completedReps > 0) {
-          repsDisplay = '$completedReps reps done';
-        }
+      if (coachId != null && progress.containsKey(coachId)) {
+        final completed = progress[coachId]!;
+        if (completed > 0) repsValue = completed.toString();
       }
     }
+    final repsDisplay = '$repsValue Reps × 3 Sets';
+
+    // Get completed reps for the detail screen (if any)
+    final coachId = isTracked ? exerciseTitleToCoachId[exercise.title] : null;
+    final completedReps = (coachId != null && progress.containsKey(coachId))
+        ? progress[coachId]
+        : null;
 
     return GestureDetector(
       onTap: () {
+        // Always open the detail screen
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => ExerciseDetailScreen(exercise: exercise),
+            builder: (context) => ExerciseDetailScreen(
+              exercise: exercise,
+              heroTag: 'exercise_image_${exercise.id}',
+              isTracked: false, // <-- no saving from main tab
+              completedReps: completedReps,
+              fromWeeklyAssessment: false, // <-- main tab mode
+            ),
           ),
         );
       },
@@ -285,18 +255,9 @@ class ExercisesTab extends ConsumerWidget {
                                 ),
                               ),
                               const SizedBox(height: 6),
-                              Row(
-                                children: [
-                                  _buildTopPill(
-                                    icon: Icons.repeat_rounded,
-                                    label: repsDisplay, // ← dynamic
-                                  ),
-                                  const SizedBox(width: 8),
-                                  _buildTopPill(
-                                    icon: Icons.timer_outlined,
-                                    label: timerLabel,
-                                  ),
-                                ],
+                              _buildTopPill(
+                                icon: Icons.repeat_rounded,
+                                label: repsDisplay,
                               ),
                             ],
                           ),

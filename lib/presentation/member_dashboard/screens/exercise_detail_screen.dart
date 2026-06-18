@@ -6,11 +6,17 @@ import '../../../domain/entities/exercises/exercise.dart';
 class ExerciseDetailScreen extends StatefulWidget {
   final Exercise exercise;
   final String? heroTag;
+  final bool isTracked;         // true only for the 4 exercises in weekly assessment
+  final int? completedReps;     // saved rep count from weekly assessment (if any)
+  final bool fromWeeklyAssessment; // true when opened from the weekly assessment tab
 
   const ExerciseDetailScreen({
     super.key,
     required this.exercise,
     this.heroTag,
+    this.isTracked = false,
+    this.completedReps,
+    this.fromWeeklyAssessment = false,
   });
 
   @override
@@ -24,6 +30,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
   bool _isPlaying = false;
 
   static const Map<String, List<String>> _exerciseInstructions = {
+    // ... (same as before, full list) ...
     'Bird Dog': [
       'Start on all fours with your hands directly under your shoulders and knees under your hips.',
       'Keep your spine neutral and engage your core.',
@@ -152,56 +159,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     ],
   };
 
-  static const Map<String, String> _holdDurations = {
-    'Bird Dog': '3 sec',
-    'Cat-Cow': '2 sec',
-    'Chest Stretch': '30 sec',
-    'Glute Bridge': '2 sec',
-    'Hip Flexor Stretch': '30 sec',
-    'Neck Rotation': '2 sec',
-    'Right Side Leg Raise': '2 sec',
-    'Side Bending Right': '20 sec',
-    'Thoracic Back Extension': '5 sec',
-    'Tummy Twist': '2 sec',
-  };
-
-  static const Map<String, int> _secPerRep = {
-    'Bird Dog': 6,
-    'Cat-Cow': 5,
-    'Chest Stretch': 30,
-    'Circumduction': 4,
-    'Dead Bug': 6,
-    'Glute Bridge': 4,
-    'Hip Flexor Stretch': 30,
-    'Left Side Plank': 20,
-    'Leg Lift': 4,
-    'Micro Break Walking': 60,
-    'Neck Rotation': 4,
-    'Plank': 20,
-    'Right Side Leg Raise': 4,
-    'Side Bending Right': 20,
-    'Sit to Stand': 4,
-    'Squatting': 4,
-    'Thoracic Back Extension': 7,
-    'Tummy Twist': 4,
-  };
-
   static const Color _accentColor = Color(0xFF6C63FF);
-
-  static String _clean(String raw) =>
-      raw.replaceAll(RegExp(r'\s*(reps?|sets?)', caseSensitive: false), '').trim();
-
-  String _calculateTotalTimer(String repsRaw, String setsRaw, String title) {
-    final reps = int.tryParse(_clean(repsRaw)) ?? 10;
-    final sets = int.tryParse(_clean(setsRaw)) ?? 1;
-    final secPerRep = _secPerRep[title] ?? 4;
-
-    final restSeconds = sets > 1 ? (sets - 1) * 15 : 0;
-    final totalSeconds = reps * sets * secPerRep + restSeconds;
-
-    final mins = (totalSeconds / 60).ceil();
-    return '$mins min';
-  }
 
   @override
   void initState() {
@@ -261,21 +219,19 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
             .toList();
   }
 
-  String? _getHoldDuration() => _holdDurations[widget.exercise.title];
-
   @override
   Widget build(BuildContext context) {
     final diffColor = _difficultyColor(widget.exercise.difficultyLevel);
-    final holdDuration = _getHoldDuration();
 
-    final repsLabel =
-        '${_clean(widget.exercise.reps)}×${_clean(widget.exercise.sets)}';
-
-    final timerLabel = _calculateTotalTimer(
-      widget.exercise.reps,
-      widget.exercise.sets,
-      widget.exercise.title,
-    );
+    // ─── Corrected reps/sets display logic ──────────────────────────
+    // In the main tab (fromWeeklyAssessment = false), show the pill.
+    // If completedReps is available and > 0, use that; otherwise default "10 Reps × 3 Sets".
+    String repsSetsDisplay = '10 Reps × 3 Sets';
+    if (!widget.fromWeeklyAssessment) {
+      if (widget.completedReps != null && widget.completedReps! > 0) {
+        repsSetsDisplay = '${widget.completedReps} Reps × 3 Sets';
+      }
+    }
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -290,6 +246,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                   MaterialPageRoute(
                     builder: (context) => ExerciseCoachScreen(
                       exerciseTitle: widget.exercise.title,
+                      trackReps: widget.isTracked, // true only for the 4 in weekly assessment
                     ),
                   ),
                 );
@@ -360,11 +317,6 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           _buildImageBadge(
-                            icon: Icons.timer_outlined,
-                            label: timerLabel,
-                            color: Colors.white,
-                          ),
-                          _buildImageBadge(
                             icon: Icons.bar_chart_rounded,
                             label: widget.exercise.difficultyLevel,
                             color: diffColor,
@@ -408,23 +360,17 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      _buildStatPill(
-                        icon: Icons.repeat_rounded,
-                        value: repsLabel,
-                        label: 'Reps',
-                      ),
-                      if (holdDuration != null) ...[
-                        const SizedBox(width: 12),
-                        _buildStatPill(
-                          icon: Icons.timer_outlined,
-                          value: holdDuration,
-                          label: 'Hold',
-                        ),
-                      ],
-                    ],
-                  ),
+
+                  // ── Conditional: either reps/sets pill OR motivational message ──
+                  if (widget.fromWeeklyAssessment)
+                    _buildMotivationalMessage()
+                  else
+                    _buildStatPill(
+                      icon: Icons.repeat_rounded,
+                      value: repsSetsDisplay,
+                      label: '',
+                    ),
+
                   const SizedBox(height: 36),
                   Text(
                     'Instructions',
@@ -459,6 +405,58 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     );
   }
 
+  // ── Motivational message for weekly assessment ──
+  Widget _buildMotivationalMessage() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF6C63FF), Color(0xFF8B5CF6)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF6C63FF).withValues(alpha: 0.3),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.flag_rounded,
+              color: Color(0xFF6C63FF),
+              size: 28,
+            ),
+          ),
+          const SizedBox(width: 16),
+          const Expanded(
+            child: Text(
+              'DO AS MUCH CORRECT REPS AS YOU CAN',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.5,
+                height: 1.3,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildStatPill({
     required IconData icon,
     required String value,
@@ -483,7 +481,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
           Icon(icon, size: 17, color: Colors.white),
           const SizedBox(width: 7),
           Text(
-            '$value $label',
+            '$value${label.isNotEmpty ? ' $label' : ''}',
             style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w800,
