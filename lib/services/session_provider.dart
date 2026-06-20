@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/datasources/auth_service_mock.dart';
+import 'ble/ble_monitor_provider.dart';
 import 'ml/realtime_processor.dart';
 
 const Map<int, String> postureNames = {
@@ -189,8 +190,6 @@ class SessionNotifier extends Notifier<SessionState> {
   RealtimeProcessor? _processor;
   StreamSubscription<PredictionResult>? _sub;
   StreamSubscription<Map<String, List<double>>>? _quatSub;
-  StreamSubscription<Map<String, int>>? _batterySub;
-  StreamSubscription<Map<String, bool>>? _connectionSub;
 
   @override
   SessionState build() {
@@ -206,17 +205,32 @@ class SessionNotifier extends Notifier<SessionState> {
       }
     });
 
+    ref.listen<BleMonitorState>(bleMonitorProvider, (prev, next) {
+      if (state.status != SessionStatus.idle) {
+        state = state.copyWith(
+          sensorBatteryLevels: next.batteryLevels,
+          sensorConnections: next.connections,
+        );
+      }
+    });
+
     return const SessionState();
   }
 
   Future<void> startSession() async {
     await _cleanup();
+    final initialMonitor = ref.read(bleMonitorProvider);
     state = SessionState(
       status: SessionStatus.starting,
       startTime: DateTime.now(),
+      sensorBatteryLevels: initialMonitor.batteryLevels,
+      sensorConnections: initialMonitor.connections,
     );
 
-    _processor = RealtimeProcessor();
+    // Get the shared BleReceiver from the persistent monitor
+    final bleReceiver = ref.read(bleMonitorProvider.notifier).bleReceiver;
+
+    _processor = RealtimeProcessor(bleReceiver: bleReceiver);
     
     // Read the current enabled configuration
     final enabledSensors = ref.read(enabledSensorsProvider);
@@ -232,13 +246,10 @@ class SessionNotifier extends Notifier<SessionState> {
       ref.read(latestQuatsProvider.notifier).update(quats);
     });
 
-    _batterySub = _processor!.batteryStream.listen((batteryMap) {
-      state = state.copyWith(sensorBatteryLevels: batteryMap);
-    });
-
-    _connectionSub = _processor!.connectionStream.listen((connectionMap) {
-      state = state.copyWith(sensorConnections: connectionMap);
-    });
+    // Battery and connection data are now provided by bleMonitorProvider.
+    // The session still copies them into SessionState for backward
+    // compatibility with other screens that read from sessionProvider.
+    // This is updated dynamically by the listener configured in [build].
   }
 
   void _onPrediction(PredictionResult result) {
@@ -361,10 +372,6 @@ class SessionNotifier extends Notifier<SessionState> {
     _sub = null;
     await _quatSub?.cancel();
     _quatSub = null;
-    await _batterySub?.cancel();
-    _batterySub = null;
-    await _connectionSub?.cancel();
-    _connectionSub = null;
     ref.read(latestQuatsProvider.notifier).update(null);
     await _processor?.stop();
     _processor?.dispose();

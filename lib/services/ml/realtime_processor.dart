@@ -34,9 +34,11 @@ class PredictionResult {
 /// Call [stop] to clean up.
 class RealtimeProcessor {
   RealtimeProcessor({
+    required BleReceiver bleReceiver,
     int triggerEvery = 25,
     int winLen = TflitePredictor.winLen,
-  })  : _triggerEvery = triggerEvery,
+  })  : _bleReceiver = bleReceiver,
+        _triggerEvery = triggerEvery,
         _winLen = winLen;
 
   final int _triggerEvery;
@@ -51,8 +53,8 @@ class RealtimeProcessor {
   final _quatController = StreamController<Map<String, List<double>>>.broadcast();
   Stream<Map<String, List<double>>> get latestQuats => _quatController.stream;
 
-  Stream<Map<String, int>> get batteryStream => _bleReceiver.batteryStream;
-  Stream<Map<String, bool>> get connectionStream => _bleReceiver.connectionStream;
+  // Battery and connection streams are exposed by BleMonitorNotifier directly;
+  // the processor no longer proxies them.
 
   // Sensor label → latest row for that sensor in this "sync round"
   final Map<String, Map<String, double>> _latest = {};
@@ -61,7 +63,7 @@ class RealtimeProcessor {
 
   int _syncedSinceLastInfer = 0;
 
-  final BleReceiver _bleReceiver = BleReceiver();
+  final BleReceiver _bleReceiver;
   StreamSubscription<SensorRow>? _rowSub;
   TflitePredictor? _predictor;
   Set<String>? _enabledMacs;
@@ -80,15 +82,17 @@ class RealtimeProcessor {
 
     _predictor = await TflitePredictor.instance();
 
+    // Subscribe to the shared BleReceiver's row stream.
+    // The receiver is already running (managed by BleMonitorNotifier).
     _rowSub = _bleReceiver.rows.listen(_onRow);
-    await _bleReceiver.start(enabledMacs: enabledMacs);
   }
 
   Future<void> stop() async {
     _running = false;
     await _rowSub?.cancel();
     _rowSub = null;
-    await _bleReceiver.stop();
+    // Do NOT stop the BleReceiver — it is shared and managed by
+    // BleMonitorNotifier. We only unsubscribe from the row stream.
     _latest.clear();
     _buffer.clear();
     _syncedSinceLastInfer = 0;
@@ -104,7 +108,7 @@ class RealtimeProcessor {
     stop();
     _predController.close();
     _quatController.close();
-    _bleReceiver.dispose();
+    // Do NOT dispose the BleReceiver — it is shared.
     _predictor?.dispose();
   }
 
