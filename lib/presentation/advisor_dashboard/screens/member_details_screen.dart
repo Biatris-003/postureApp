@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../domain/entities/assigned_member.dart';
 import 'package:printing/printing.dart';
+import '../../../data/datasources/auth_service_mock.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 

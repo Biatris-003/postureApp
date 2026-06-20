@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'member_details_screen.dart';
 import '../../../domain/entities/assigned_member.dart';
+import '../../../data/datasources/auth_service_mock.dart';
+
 
 class AssignedMembersTab extends ConsumerStatefulWidget {
   const AssignedMembersTab({super.key});

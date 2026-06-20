@@ -51,6 +51,36 @@ class BleReceiver {
 
   // ── Public API ─────────────────────────────────────────────────────────────
 
+  // Future<void> start({Set<String>? enabledMacs}) async {
+  //   if (_running) return;
+  //   _running = true;
+  //   _enabledMacs = enabledMacs;
+
+  //   // Reset status/battery maps
+  //   _batteryLevels.clear();
+  //   _connectionStates.clear();
+  //   for (final mac in kSensorIdMap.keys) {
+  //     _connectionStates[mac] = false;
+  //     _batteryLevels[mac] = 0;
+  //   }
+  //   _emitConnectionUpdate();
+  //   _emitBatteryUpdate();
+
+  //   FlutterBluePlus.setLogLevel(LogLevel.none, color: false);
+  //   await _requestPermissions();
+
+  //   // Stagger connection attempts to avoid overwhelming Android's GATT stack.
+  //   // Simultaneous connects all fail with error 133 (GATT_ERROR).
+  //   int i = 0;
+  //   for (final mac in kSensorIdMap.keys) {
+  //     _states[mac] = DeviceState();
+  //     Future<void>.delayed(Duration(milliseconds: i * 600), () {
+  //       if (_running) _connectDevice(mac);
+  //     });
+  //     i++;
+  //   }
+  // }
+
   Future<void> start({Set<String>? enabledMacs}) async {
     if (_running) return;
     _running = true;
@@ -68,6 +98,19 @@ class BleReceiver {
 
     FlutterBluePlus.setLogLevel(LogLevel.none, color: false);
     await _requestPermissions();
+
+    // ── ADD THIS BLOCK ──────────────────────────────────────────────
+    // Scan first so Android has fresh advertising data for these devices
+    // before we attempt direct connects below.
+    try {
+      print('[BLE] scanning before connect...');
+      await FlutterBluePlus.startScan(timeout: const Duration(seconds: 4));
+      await FlutterBluePlus.stopScan();
+      print('[BLE] scan complete');
+    } catch (e) {
+      print('[BLE] scan error: $e');
+    }
+    // ─────────────────────────────────────────────────────────────────
 
     // Stagger connection attempts to avoid overwhelming Android's GATT stack.
     // Simultaneous connects all fail with error 133 (GATT_ERROR).
