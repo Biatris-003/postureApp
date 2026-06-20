@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../../services/ml/spine_kinematics.dart';
@@ -58,6 +60,7 @@ class _SpineViewTabState extends ConsumerState<SpineViewTab>
       ..setNavigationDelegate(NavigationDelegate(
         onPageFinished: (_) {
           setState(() => _webReady = true);
+          _loadPatientModel();
           // Background synced in build() once context is available.
         },
       ))
@@ -82,6 +85,17 @@ class _SpineViewTabState extends ConsumerState<SpineViewTab>
                 c.g.round().toRadixString(16).padLeft(2, '0') +
                 c.b.round().toRadixString(16).padLeft(2, '0');
     _wvc.runJavaScript("setBackground('#$hex')");
+  }
+
+  /// Sends the bundled GLB directly to the WebView. A data URL avoids the
+  /// relative-path limitation of Android/iOS WebView Flutter assets.
+  Future<void> _loadPatientModel() async {
+    final bytes = await rootBundle.load('assets/models/seated_patient.glb');
+    final dataUrl = 'data:model/gltf-binary;base64,'
+        '${base64Encode(bytes.buffer.asUint8List())}';
+    if (_webReady) {
+      await _wvc.runJavaScript('loadPatientModel(${jsonEncode(dataUrl)})');
+    }
   }
 
   void _sendToWebView(Map<String, List<double>> quats) {
@@ -292,147 +306,156 @@ class _IdleBody extends StatelessWidget {
   }
 }
 
-// ── Live body ─────────────────────────────────────────────────────────────────
-
+// ── Metrics row ───────────────────────────────────────────────────────────────
 class _LiveBody extends StatelessWidget {
   const _LiveBody({
     required this.quats,
     required this.wvc,
     required this.neutralQuats,
   });
+
   final Map<String, List<double>> quats;
   final WebViewController wvc;
   final Map<String, List<double>>? neutralQuats;
 
   @override
   Widget build(BuildContext context) {
-    final metrics = SpineKinematics.clinicalAngles(quats, neutralQuats: neutralQuats);
-
-    return Column(
-      children: [
-        _MetricsRow(metrics: metrics),
-        Expanded(
-          child: ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-            child: ColoredBox(
-              color: Theme.of(context).scaffoldBackgroundColor,
-              child: WebViewWidget(controller: wvc),
-            ),
-          ),
-        ),
-      ],
+    final metrics = SpineKinematics.clinicalAngles(
+      quats,
+      neutralQuats: neutralQuats,
     );
-  }
-}
 
-// ── Metrics row ───────────────────────────────────────────────────────────────
-
-class _MetricsRow extends StatelessWidget {
-  const _MetricsRow({required this.metrics});
-  final Map<String, double> metrics;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: Row(
-        children: [
-          _MetricCard(
-            label: 'Lumbar\nLordosis',
-            value: metrics['lumbarLordosis'] ?? 0,
-            unit: '°',
-            warnAbove: 60,
-            icon: Icons.arrow_downward_rounded,
-          ),
-          const SizedBox(width: 8),
-          _MetricCard(
-            label: 'Thoracic\nKyphosis',
-            value: metrics['thoracicKyphosis'] ?? 0,
-            unit: '°',
-            warnAbove: 50,
-            icon: Icons.arrow_upward_rounded,
-          ),
-          const SizedBox(width: 8),
-          _MetricCard(
-            label: 'Cervical\nLordosis',
-            value: metrics['cervicalLordosis'] ?? 0,
-            unit: '°',
-            warnAbove: 40,
-            icon: Icons.arrow_downward_rounded,
-          ),
-          const SizedBox(width: 8),
-          _MetricCard(
-            label: 'Lateral\nDeviation',
-            value: metrics['lateralDeviation'] ?? 0,
-            unit: '°',
-            warnAbove: 10,
-            icon: Icons.swap_horiz_rounded,
-          ),
-        ],
+    final cards = [
+      _SideMetric(
+        label: 'Lumbar\nLordosis',
+        value: metrics['lumbarLordosis'] ?? 0,
+        warnAbove: 60,
+        icon: Icons.arrow_downward_rounded,
       ),
+      _SideMetric(
+        label: 'Thoracic\nKyphosis',
+        value: metrics['thoracicKyphosis'] ?? 0,
+        warnAbove: 50,
+        icon: Icons.arrow_upward_rounded,
+      ),
+      _SideMetric(
+        label: 'Cervical\nLordosis',
+        value: metrics['cervicalLordosis'] ?? 0,
+        warnAbove: 40,
+        icon: Icons.arrow_downward_rounded,
+      ),
+      _SideMetric(
+        label: 'Lateral\nDeviation',
+        value: metrics['lateralDeviation'] ?? 0,
+        warnAbove: 10,
+        icon: Icons.swap_horiz_rounded,
+      ),
+    ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cardWidth = math.min(98.0, constraints.maxWidth * 0.23);
+
+        return ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              ColoredBox(
+                color: Theme.of(context).scaffoldBackgroundColor,
+                child: WebViewWidget(controller: wvc),
+              ),
+
+              Positioned(
+                      left: 8,
+                      top: constraints.maxHeight * 0.12,
+                      width: cardWidth,
+                      child: IgnorePointer(
+                        child: Column(
+                          children: [
+                            cards[0],
+                            const SizedBox(height: 10),
+                            cards[1],
+                            const SizedBox(height: 10),
+                            cards[2],
+                            const SizedBox(height: 10),
+                            cards[3],
+                          ],
+                        ),
+                      ),
+                    ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
 
-class _MetricCard extends StatelessWidget {
-  const _MetricCard({
+class _SideMetric extends StatelessWidget {
+  const _SideMetric({
     required this.label,
     required this.value,
-    required this.unit,
     required this.warnAbove,
     required this.icon,
   });
 
   final String label;
   final double value;
-  final String unit;
   final double warnAbove;
   final IconData icon;
 
   @override
   Widget build(BuildContext context) {
-    final warn  = value > warnAbove;
-    final color = warn ? const Color(0xFFEF4444) : Theme.of(context).primaryColor;
+    final isWarning = value > warnAbove;
+    final color = isWarning
+        ? const Color(0xFFEF4444)
+        : Theme.of(context).colorScheme.primary;
 
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-        decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: [
-            BoxShadow(
-              color: Theme.of(context).shadowColor.withValues(alpha: 0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
-            ),
-          ],
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: color.withValues(alpha: 0.22),
         ),
-        child: Column(
-          children: [
-            Icon(icon, color: color, size: 16),
-            const SizedBox(height: 4),
-            Text(
-              '${value.toStringAsFixed(1)}$unit',
-              style: TextStyle(
-                color: color,
-                fontSize: 17,
-                fontWeight: FontWeight.w800,
-              ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.10),
+            blurRadius: 12,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: color, size: 18),
+          const SizedBox(height: 6),
+          Text(
+            '${value.toStringAsFixed(1)}°',
+            style: TextStyle(
+              color: color,
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
             ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                height: 1.3,
-              ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Theme.of(context)
+                  .colorScheme
+                  .onSurface
+                  .withValues(alpha: 0.62),
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              height: 1.25,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

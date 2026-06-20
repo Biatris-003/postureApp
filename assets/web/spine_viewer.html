@@ -8,263 +8,573 @@
     body { background: #111827; overflow: hidden; }
     canvas { display: block; }
     #hint {
-      position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
-      color: rgba(255,255,255,0.28); font: 11px/1 sans-serif;
-      pointer-events: none; letter-spacing: 0.04em;
+      position: fixed;
+      bottom: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: rgba(255, 255, 255, 0.32);
+      font: 11px/1 sans-serif;
+      letter-spacing: 0.04em;
+      pointer-events: none;
     }
   </style>
 </head>
 <body>
-<div id="hint">Drag to rotate · Pinch to zoom</div>
-<script src="three.min.js"></script>
-<script>
-// ── Scene setup ──────────────────────────────────────────────────────────────
-var scene = new THREE.Scene();
-scene.background = new THREE.Color(0x111827);
+  <div id="hint">Drag to rotate · Pinch to zoom</div>
 
-var W = window.innerWidth, H = window.innerHeight;
-var camera   = new THREE.PerspectiveCamera(42, W / H, 0.001, 20);
-var renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setSize(W, H);
-document.body.appendChild(renderer.domElement);
+  <script src="three.min.js"></script>
+  <script src="GLTFLoader.js"></script>
+  <script>
+    var scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x111827);
 
-// Flutter calls this to tint the scene background to match the app theme.
-window.setBackground = function(cssHex) {
-  scene.background = new THREE.Color(cssHex);
-};
+    var W = window.innerWidth;
+    var H = window.innerHeight;
 
-// ── Lighting ─────────────────────────────────────────────────────────────────
-scene.add(new THREE.AmbientLight(0xffffff, 0.55));
-var sun = new THREE.DirectionalLight(0xffffff, 0.80);
-sun.position.set(1, 2, 1.5);
-scene.add(sun);
-var fill = new THREE.DirectionalLight(0x8899ff, 0.30);
-fill.position.set(-1, -0.5, -1);
-scene.add(fill);
-var back = new THREE.DirectionalLight(0xffaa66, 0.18);
-back.position.set(0, -1, -2);
-scene.add(back);
+    var camera = new THREE.PerspectiveCamera(38, W / H, 0.001, 30);
+    var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(W, H);
+    renderer.sortObjects = true;
+    document.body.appendChild(renderer.domElement);
 
-// ── Spine constants ──────────────────────────────────────────────────────────
-var N       = 25;
-var SENSORS = [1, 6, 14, 18]; // L5, T12, T4, C7
+    window.setBackground = function(cssHex) {
+      scene.background = new THREE.Color(cssHex);
+    };
 
-function isSensorVert(i) {
-  return i === 1 || i === 6 || i === 14 || i === 18;
-}
+    scene.add(new THREE.HemisphereLight(0xeaf3ff, 0x253143, 1.2));
 
-function levelColor(i) {
-  if (i <= 5)  return 0xe8784d;
-  if (i <= 17) return 0x5b8fd9;
-  return 0x40b09a;
-}
+    var keyLight = new THREE.DirectionalLight(0xffffff, 1.15);
+    keyLight.position.set(1.4, 2.2, 2.5);
+    scene.add(keyLight);
 
-// ── Body skin mesh ───────────────────────────────────────────────────────────
-// 5 cylinder regions + 1 sphere head, drawn behind the spine (renderOrder 0).
-// depthWrite false so spine geometry always shows through the skin.
-var skinMat = new THREE.MeshLambertMaterial({
-  color: 0xddb896,
-  transparent: true,
-  opacity: 0.26,
-  depthWrite: false
-});
+    var rimLight = new THREE.DirectionalLight(0x66b7ff, 0.7);
+    rimLight.position.set(-2, 1, -2);
+    scene.add(rimLight);
 
-// [fromVertIdx, toVertIdx, xHalfWidth, zHalfDepth]
-var skinCfg = [
-  [0,  1,  0.098, 0.082],
-  [1,  6,  0.088, 0.076],
-  [6,  14, 0.126, 0.092],
-  [14, 18, 0.138, 0.088],
-  [18, 24, 0.042, 0.038]
-];
+    var warmLight = new THREE.DirectionalLight(0xffae8a, 0.32);
+    warmLight.position.set(0, -1, 1);
+    scene.add(warmLight);
 
-// Shared unit cylinder (r=0.5, h=1) — each mesh scales it differently.
-var skinCylGeom = new THREE.CylinderGeometry(0.5, 0.5, 1, 12);
-var skinMeshes  = [];
-for (var si = 0; si < skinCfg.length; si++) {
-  var cfg  = skinCfg[si];
-  var smesh = new THREE.Mesh(skinCylGeom, skinMat.clone());
-  smesh.renderOrder = 0;
-  scene.add(smesh);
-  skinMeshes.push({ mesh: smesh, fi: cfg[0], ti: cfg[1], rx: cfg[2], rz: cfg[3] });
-}
+    var N = 25;
+    var IDX = {
+      sacrum: 0,
+      l5: 1,
+      t12: 6,
+      t4: 14,
+      c7: 18,
+      c1: 24
+    };
 
-// Head sphere
-var headMesh = new THREE.Mesh(
-  new THREE.SphereGeometry(1, 12, 10),
-  skinMat.clone()
-);
-headMesh.renderOrder = 0;
-scene.add(headMesh);
+    function isSensorVert(i) {
+      return i === IDX.l5 || i === IDX.t12 || i === IDX.t4 || i === IDX.c7;
+    }
 
-// ── Vertebra disc meshes ─────────────────────────────────────────────────────
-var discs = [];
-for (var i = 0; i < N; i++) {
-  var sensor = isSensorVert(i);
-  var radius = sensor ? 0.024 : (i < 6 ? 0.020 : i < 18 ? 0.016 : 0.013);
-  var height = sensor ? 0.010 : 0.006;
-  var geom = new THREE.CylinderGeometry(radius, radius * 0.9, height, 20);
-  var mat  = new THREE.MeshLambertMaterial({ color: levelColor(i) });
-  var mesh = new THREE.Mesh(geom, mat);
-  mesh.renderOrder = 1;
-  scene.add(mesh);
-  discs.push(mesh);
+    function levelColor(i) {
+      if (i <= IDX.t12) return 0xf07b58;
+      if (i <= IDX.t4) return 0x58a6e8;
+      return 0x4fd1b5;
+    }
 
-  if (sensor) {
-    var rg   = new THREE.TorusGeometry(radius + 0.009, 0.0028, 8, 28);
-    var rm   = new THREE.MeshLambertMaterial({ color: 0xcccccc });
-    var ring = new THREE.Mesh(rg, rm);
-    ring.rotation.x = Math.PI / 2;
-    ring.renderOrder = 1;
-    mesh.add(ring);
-  }
-}
+    var bodyMaterial = new THREE.MeshPhongMaterial({
+      color: 0xb9d5e8,
+      transparent: true,
+      opacity: 0.16,
+      shininess: 60,
+      depthWrite: false
+    });
 
-// ── Segment cylinders ────────────────────────────────────────────────────────
-var segs = [];
-for (var i = 0; i < N - 1; i++) {
-  var r    = i < 6 ? 0.013 : i < 18 ? 0.010 : 0.008;
-  var geom = new THREE.CylinderGeometry(r, r, 1, 10);
-  var mat  = new THREE.MeshLambertMaterial({
-    color: levelColor(i),
-    transparent: true,
-    opacity: 0.60
-  });
-  var mesh = new THREE.Mesh(geom, mat);
-  mesh.renderOrder = 1;
-  scene.add(mesh);
-  segs.push(mesh);
-}
+    var jointMaterial = new THREE.MeshPhongMaterial({
+      color: 0xc7e4f7,
+      transparent: true,
+      opacity: 0.18,
+      shininess: 70,
+      depthWrite: false
+    });
 
-// ── Spinal cord line ─────────────────────────────────────────────────────────
-var linePos  = new Float32Array(N * 3);
-var lineGeom = new THREE.BufferGeometry();
-lineGeom.setAttribute('position', new THREE.BufferAttribute(linePos, 3));
-var lineMat  = new THREE.LineBasicMaterial({
-  color: 0x888888,
-  transparent: true,
-  opacity: 0.35
-});
-var cordLine = new THREE.Line(lineGeom, lineMat);
-cordLine.renderOrder = 2;
-scene.add(cordLine);
+    function createBodyPart(geometry, material) {
+      var mesh = new THREE.Mesh(geometry, material.clone());
+      mesh.renderOrder = 1;
+      scene.add(mesh);
+      return mesh;
+    }
 
-// ── Touch orbit ──────────────────────────────────────────────────────────────
-var target = new THREE.Vector3(0, 0.48, 0);
-var theta  = 0.45;
-var phi    = 1.28;
-var radius = 0.90;
-var pX = 0, pY = 0, pPinch = 0;
+    var torsoParts = [
+      { mesh: createBodyPart(new THREE.CylinderGeometry(0.18, 0.15, 1, 20), bodyMaterial), from: 0,  to: 1,  width: 0.20, depth: 0.14 },
+      { mesh: createBodyPart(new THREE.CylinderGeometry(0.25, 0.18, 1, 20), bodyMaterial), from: 1,  to: 6,  width: 0.27, depth: 0.17 },
+      { mesh: createBodyPart(new THREE.CylinderGeometry(0.31, 0.25, 1, 20), bodyMaterial), from: 6,  to: 14, width: 0.34, depth: 0.20 },
+      { mesh: createBodyPart(new THREE.CylinderGeometry(0.36, 0.31, 1, 20), bodyMaterial), from: 14, to: 18, width: 0.40, depth: 0.22 },
+      { mesh: createBodyPart(new THREE.CylinderGeometry(0.11, 0.10, 1, 16), bodyMaterial), from: 18, to: 24, width: 0.10, depth: 0.09 }
+    ];
 
-function moveCamera() {
-  camera.position.set(
-    target.x + radius * Math.sin(phi) * Math.sin(theta),
-    target.y + radius * Math.cos(phi),
-    target.z + radius * Math.sin(phi) * Math.cos(theta)
-  );
-  camera.lookAt(target);
-}
-moveCamera();
+    var pelvis = createBodyPart(new THREE.SphereGeometry(1, 20, 16), jointMaterial);
+    var head = createBodyPart(new THREE.SphereGeometry(1, 24, 20), jointMaterial);
 
-var el = renderer.domElement;
-el.addEventListener('touchstart', function(e) {
-  if (e.touches.length === 1) { pX = e.touches[0].clientX; pY = e.touches[0].clientY; }
-  if (e.touches.length === 2) {
-    pPinch = Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
-                        e.touches[0].clientY - e.touches[1].clientY);
-  }
-}, { passive: true });
+    var shoulderBar = createBodyPart(
+      new THREE.CylinderGeometry(0.06, 0.06, 1, 16),
+      jointMaterial
+    );
 
-el.addEventListener('touchmove', function(e) {
-  e.preventDefault();
-  if (e.touches.length === 1) {
-    var dx = e.touches[0].clientX - pX;
-    var dy = e.touches[0].clientY - pY;
-    theta -= dx * 0.006;
-    phi = Math.max(0.12, Math.min(Math.PI - 0.12, phi + dy * 0.006));
-    pX = e.touches[0].clientX;
-    pY = e.touches[0].clientY;
+    var leftShoulder = createBodyPart(new THREE.SphereGeometry(1, 16, 12), jointMaterial);
+    var rightShoulder = createBodyPart(new THREE.SphereGeometry(1, 16, 12), jointMaterial);
+
+    var leftArm = createBodyPart(
+      new THREE.CylinderGeometry(0.075, 0.055, 1, 14),
+      bodyMaterial
+    );
+
+    var rightArm = createBodyPart(
+      new THREE.CylinderGeometry(0.075, 0.055, 1, 14),
+      bodyMaterial
+    );
+
+    var leftLeg = createBodyPart(
+      new THREE.CylinderGeometry(0.12, 0.085, 1, 16),
+      bodyMaterial
+    );
+
+    var rightLeg = createBodyPart(
+      new THREE.CylinderGeometry(0.12, 0.085, 1, 16),
+      bodyMaterial
+    );
+
+    // The original procedural body is kept only as a compatibility fallback.
+    // The seated GLB below is the visible patient model.
+    torsoParts.forEach(function(part) { part.mesh.visible = false; });
+    [pelvis, head, shoulderBar, leftShoulder, rightShoulder, leftArm, rightArm, leftLeg, rightLeg]
+      .forEach(function(mesh) { mesh.visible = false; });
+
+    var patientModel = null;
+    var patientCharacter = null;
+    var patientCharacterRoot = null;
+    var patientCharacterBaseQuaternion = null;
+    var patientMixer = null;
+    var patientBackBones = [];
+    var patientLoader = new THREE.GLTFLoader();
+
+    window.loadPatientModel = function(modelUrl) {
+      if (patientModel) scene.remove(patientModel);
+
+      patientLoader.load(
+      modelUrl,
+      function(gltf) {
+        patientModel = gltf.scene;
+        patientModel.name = 'SeatedPatient';
+
+        patientModel.traverse(function(node) {
+          if (!node.isMesh) return;
+          node.castShadow = false;
+          node.receiveShadow = false;
+
+          // Only the patient is translucent: the chair stays solid.
+          if (node.name.indexOf('Patient') === 0 || node.name === 'SeatedCharacterBody') {
+            patientCharacter = node;
+            var materials = Array.isArray(node.material) ? node.material : [node.material];
+            materials.forEach(function(material) {
+              material.transparent = true;
+              material.opacity = node.name.indexOf('Back') !== -1 ? 0.58 : 0.22;
+              if (node.name.indexOf('Back') !== -1 && material.color) {
+                material.color.set(0x79b9e8);
+              }
+              material.depthWrite = false;
+              material.needsUpdate = true;
+            });
+            node.renderOrder = 2;
+          } else {
+            var chairMaterials = Array.isArray(node.material) ? node.material : [node.material];
+            chairMaterials.forEach(function(material) {
+              material.transparent = false;
+              material.opacity = 1;
+              if (material.color) material.color.set(0x7186a3);
+              if ('roughness' in material) material.roughness = 0.72;
+              material.depthWrite = true;
+              material.needsUpdate = true;
+            });
+            node.renderOrder = 1;
+          }
+        });
+
+        // Align the seated model with the live sacrum-to-C1 spine chain.
+        patientModel.scale.setScalar(0.72);
+        patientModel.position.set(0, -0.55, 0.0);
+        patientModel.rotation.y = Math.PI;
+        scene.add(patientModel);
+
+        // Keep the character at its authored seated registration and raise the
+        // imported chair to meet it. This preserves the previously correct
+        // spine placement inside the character's back.
+        patientCharacterRoot = patientModel.getObjectByName('RootNode1');
+        if (patientCharacterRoot) {
+          patientCharacterBaseQuaternion = patientCharacterRoot.quaternion.clone();
+        }
+        var chairRoot = patientModel.getObjectByName('OfficeChair');
+        if (chairRoot) chairRoot.position.y += 1.15;
+
+        // Hold the downloaded Mixamo seated pose as the character's base.
+        if (gltf.animations.length) {
+          patientMixer = new THREE.AnimationMixer(patientModel);
+          var seatedAction = patientMixer.clipAction(gltf.animations[0]);
+          seatedAction.play();
+          patientMixer.setTime(0.001);
+          seatedAction.paused = true;
+        }
+
+        // The downloaded sitting pose is proportioned for a lower chair.
+        // Extend only the shin bones so the seated hips stay on the cushion
+        // while both feet reach this chair's caster/base level.
+        ['mixamorig:LeftLeg', 'mixamorig:RightLeg'].forEach(function(name) {
+          var shin = patientModel.getObjectByName(name);
+          if (shin) shin.scale.y = 1.45;
+        });
+
+        ['mixamorig:Spine', 'mixamorig:Spine1', 'mixamorig:Spine2', 'mixamorig:Neck']
+          .forEach(function(name) {
+            var bone = patientModel.getObjectByName(name);
+            if (bone) {
+              patientBackBones.push({
+                bone: bone,
+                baseQuaternion: bone.quaternion.clone()
+              });
+            }
+          });
+      },
+      undefined,
+      function(error) {
+        console.error('Could not load seated_patient.glb', error);
+      }
+      );
+    };
+
+    var discs = [];
+    var spinousProcesses = [];
+    var sensorRings = [];
+
+    for (var i = 0; i < N; i++) {
+      var sensor = isSensorVert(i);
+      var radius = sensor ? 0.028 : (i < 6 ? 0.024 : i < 18 ? 0.020 : 0.016);
+      var height = sensor ? 0.015 : 0.010;
+
+      var vertebra = new THREE.Mesh(
+        new THREE.CylinderGeometry(radius, radius * 0.86, height, 20),
+        new THREE.MeshPhongMaterial({
+          color: levelColor(i),
+          shininess: 85
+        })
+      );
+      vertebra.renderOrder = 10;
+      scene.add(vertebra);
+      discs.push(vertebra);
+
+      var process = new THREE.Mesh(
+        new THREE.SphereGeometry(radius * 0.38, 10, 8),
+        new THREE.MeshPhongMaterial({
+          color: levelColor(i),
+          shininess: 85
+        })
+      );
+      process.renderOrder = 11;
+      scene.add(process);
+      spinousProcesses.push(process);
+
+      if (sensor) {
+        var ring = new THREE.Mesh(
+          new THREE.TorusGeometry(radius + 0.011, 0.003, 8, 28),
+          new THREE.MeshBasicMaterial({ color: 0xffffff })
+        );
+        ring.rotation.x = Math.PI / 2;
+        vertebra.add(ring);
+        sensorRings.push(ring);
+      }
+    }
+
+    var segs = [];
+    for (var j = 0; j < N - 1; j++) {
+      var segment = new THREE.Mesh(
+        new THREE.CylinderGeometry(
+          j < 6 ? 0.014 : j < 18 ? 0.011 : 0.009,
+          j < 6 ? 0.014 : j < 18 ? 0.011 : 0.009,
+          1,
+          10
+        ),
+        new THREE.MeshPhongMaterial({
+          color: levelColor(j),
+          transparent: true,
+          opacity: 0.7,
+          shininess: 65
+        })
+      );
+      segment.renderOrder = 8;
+      scene.add(segment);
+      segs.push(segment);
+    }
+
+    // Four deforming outer-back regions, matched to the four IMU landmarks.
+    // They sit within the transparent patient mesh and follow the same chain
+    // as the live spine without moving the seated legs or chair.
+    var backRegionConfig = [
+      { from: IDX.l5,  to: IDX.t12, width: 0.28, depth: 0.17, color: 0x4e8ec3 },
+      { from: IDX.t12, to: IDX.t4,  width: 0.34, depth: 0.18, color: 0x5799ca },
+      { from: IDX.t4,  to: IDX.c7,  width: 0.38, depth: 0.17, color: 0x65a6d0 },
+      { from: IDX.c7,  to: IDX.c1,  width: 0.20, depth: 0.14, color: 0x77b8da }
+    ];
+    var backRegions = backRegionConfig.map(function(config) {
+      var region = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.5, 0.5, 1, 20),
+        new THREE.MeshPhongMaterial({
+          color: config.color,
+          transparent: true,
+          opacity: 0.46,
+          shininess: 45,
+          depthWrite: false
+        })
+      );
+      region.renderOrder = 7;
+      scene.add(region);
+      return { mesh: region, config: config };
+    });
+    backRegions.forEach(function(region) { region.mesh.visible = false; });
+
+    var linePos = new Float32Array(N * 3);
+    var cordGeometry = new THREE.BufferGeometry();
+    cordGeometry.setAttribute("position", new THREE.BufferAttribute(linePos, 3));
+
+    var spinalCord = new THREE.Line(
+      cordGeometry,
+      new THREE.LineBasicMaterial({
+        color: 0xf8fafc,
+        transparent: true,
+        opacity: 0.55
+      })
+    );
+    spinalCord.renderOrder = 12;
+    scene.add(spinalCord);
+
+    var target = new THREE.Vector3(0, 0.25, 0);
+    // Start at a side profile. phi stays fixed so top/bottom views are blocked.
+    var theta = Math.PI / 2;
+    var phi = Math.PI / 2;
+    var radius = 5.0;
+    var previousX = 0;
+    var previousY = 0;
+    var previousPinch = 0;
+
+    function moveCamera() {
+      camera.position.set(
+        target.x + radius * Math.sin(phi) * Math.sin(theta),
+        target.y + radius * Math.cos(phi),
+        target.z + radius * Math.sin(phi) * Math.cos(theta)
+      );
+      camera.lookAt(target);
+    }
     moveCamera();
-  } else if (e.touches.length === 2 && pPinch > 0) {
-    var d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
-                       e.touches[0].clientY - e.touches[1].clientY);
-    radius = Math.max(0.25, Math.min(2.2, radius * pPinch / d));
-    pPinch = d;
-    moveCamera();
-  }
-}, { passive: false });
 
-// ── updateSpine — called from Flutter via runJavaScript ──────────────────────
-var _up  = new THREE.Vector3(0, 1, 0);
-var _dir = new THREE.Vector3();
-var _mid = new THREE.Vector3();
-var _qa  = new THREE.Quaternion();
+    var element = renderer.domElement;
 
-window.updateSpine = function(flat) {
-  var i, ax, ay, az, bx, by, bz, len;
+    element.addEventListener("touchstart", function(event) {
+      if (event.touches.length === 1) {
+        previousX = event.touches[0].clientX;
+        previousY = event.touches[0].clientY;
+      }
 
-  // 1. Position discs and fill linePos buffer.
-  for (i = 0; i < N; i++) {
-    var sx = flat[i * 3];
-    var sy = flat[i * 3 + 1];
-    var sz = flat[i * 3 + 2];
-    discs[i].position.set(sz, sy, -sx);
-    linePos[i * 3]     = sz;
-    linePos[i * 3 + 1] = sy;
-    linePos[i * 3 + 2] = -sx;
-  }
-  lineGeom.attributes.position.needsUpdate = true;
+      if (event.touches.length === 2) {
+        previousPinch = Math.hypot(
+          event.touches[0].clientX - event.touches[1].clientX,
+          event.touches[0].clientY - event.touches[1].clientY
+        );
+      }
+    }, { passive: true });
 
-  // 2. Orient segment cylinders.
-  for (i = 0; i < N - 1; i++) {
-    ax = linePos[i*3];     ay = linePos[i*3+1];     az = linePos[i*3+2];
-    bx = linePos[(i+1)*3]; by = linePos[(i+1)*3+1]; bz = linePos[(i+1)*3+2];
-    _mid.set((ax+bx)/2, (ay+by)/2, (az+bz)/2);
-    _dir.set(bx-ax, by-ay, bz-az);
-    len = _dir.length();
-    if (len < 1e-6) continue;
-    _dir.normalize();
-    _qa.setFromUnitVectors(_up, _dir);
-    segs[i].position.copy(_mid);
-    segs[i].quaternion.copy(_qa);
-    segs[i].scale.y = len;
-  }
+    element.addEventListener("touchmove", function(event) {
+      event.preventDefault();
 
-  // 3. Position body skin segments.
-  for (i = 0; i < skinMeshes.length; i++) {
-    var s = skinMeshes[i];
-    ax = linePos[s.fi*3];   ay = linePos[s.fi*3+1]; az = linePos[s.fi*3+2];
-    bx = linePos[s.ti*3];   by = linePos[s.ti*3+1]; bz = linePos[s.ti*3+2];
-    _mid.set((ax+bx)/2, (ay+by)/2, (az+bz)/2);
-    _dir.set(bx-ax, by-ay, bz-az);
-    len = _dir.length();
-    if (len < 1e-6) continue;
-    _dir.normalize();
-    _qa.setFromUnitVectors(_up, _dir);
-    s.mesh.position.copy(_mid);
-    s.mesh.quaternion.copy(_qa);
-    s.mesh.scale.set(s.rx * 2, len, s.rz * 2);
-  }
+      if (event.touches.length === 1) {
+        var deltaX = event.touches[0].clientX - previousX;
+        theta -= deltaX * 0.006;
 
-  // 4. Position head sphere above C1 (index 24).
-  var HR = 0.068;
-  headMesh.position.set(linePos[72], linePos[73] + HR * 1.15, linePos[74]);
-  headMesh.scale.set(HR, HR * 1.18, HR * 0.92);
-};
+        previousX = event.touches[0].clientX;
+        previousY = event.touches[0].clientY;
+        moveCamera();
+      }
 
-// ── Render loop ──────────────────────────────────────────────────────────────
-function animate() {
-  requestAnimationFrame(animate);
-  renderer.render(scene, camera);
-}
-animate();
+      if (event.touches.length === 2 && previousPinch > 0) {
+        var pinch = Math.hypot(
+          event.touches[0].clientX - event.touches[1].clientX,
+          event.touches[0].clientY - event.touches[1].clientY
+        );
 
-window.addEventListener('resize', function() {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-});
-</script>
+        radius = Math.max(1.4, Math.min(6.5, radius * previousPinch / pinch));
+        previousPinch = pinch;
+        moveCamera();
+      }
+    }, { passive: false });
+
+    var up = new THREE.Vector3(0, 1, 0);
+    var direction = new THREE.Vector3();
+    var midpoint = new THREE.Vector3();
+    var quaternion = new THREE.Quaternion();
+
+    function placeBetween(mesh, from, to, width, depth) {
+      direction.subVectors(to, from);
+      var length = direction.length();
+      if (length < 0.00001) return;
+
+      midpoint.addVectors(from, to).multiplyScalar(0.5);
+      direction.normalize();
+      quaternion.setFromUnitVectors(up, direction);
+
+      mesh.position.copy(midpoint);
+      mesh.quaternion.copy(quaternion);
+      mesh.scale.set(width * 2, length, depth * 2);
+    }
+
+    function pointAt(index) {
+      return new THREE.Vector3(
+        linePos[index * 3],
+        linePos[index * 3 + 1],
+        linePos[index * 3 + 2]
+      );
+    }
+
+    window.updateSpine = function(flat) {
+      var i;
+
+      for (i = 0; i < N; i++) {
+        var x = flat[i * 3];
+        var y = flat[i * 3 + 1];
+        var z = flat[i * 3 + 2];
+
+        // Flutter coordinates: X forward, Y up, Z lateral.
+        // Three.js coordinates: X lateral, Y up, Z depth.
+        var px = z;
+        // Registration offsets align the normalized sensor chain with the
+        // seated character's anatomical back rather than its pelvis center.
+        var py = y + 0.16;
+        var pz = -x + 0.05;
+
+        discs[i].position.set(px, py, pz);
+        spinousProcesses[i].position.set(px, py, pz + 0.022);
+
+        linePos[i * 3] = px;
+        linePos[i * 3 + 1] = py;
+        linePos[i * 3 + 2] = pz;
+      }
+
+      cordGeometry.attributes.position.needsUpdate = true;
+
+      for (i = 0; i < N - 1; i++) {
+        placeBetween(
+          segs[i],
+          pointAt(i),
+          pointAt(i + 1),
+          i < 6 ? 0.014 : i < 18 ? 0.011 : 0.009,
+          i < 6 ? 0.014 : i < 18 ? 0.011 : 0.009
+        );
+      }
+
+      for (i = 0; i < torsoParts.length; i++) {
+        var part = torsoParts[i];
+        placeBetween(
+          part.mesh,
+          pointAt(part.from),
+          pointAt(part.to),
+          part.width,
+          part.depth
+        );
+      }
+
+      var sacrum = pointAt(IDX.sacrum);
+      var c7 = pointAt(IDX.c7);
+      var c1 = pointAt(IDX.c1);
+
+      var spineDirection = c7.clone().sub(sacrum).normalize();
+      var sagittal = Math.max(-0.38, Math.min(0.38,
+        Math.atan2(spineDirection.z, spineDirection.y) * 3.0));
+      var lateral = Math.max(-0.30, Math.min(0.30,
+        Math.atan2(spineDirection.x, spineDirection.y) * 3.0));
+
+      // The live direction is distributed through the character's back bones.
+      if (patientBackBones.length) {
+        for (i = 0; i < patientBackBones.length; i++) {
+          var item = patientBackBones[i];
+          // Lower spine moves least; upper spine/neck move most. This keeps
+          // hips and legs seated while creating a natural segmented back.
+          var weight = [0.30, 0.60, 0.90, 1.10][i] || 1.0;
+          quaternion.setFromEuler(new THREE.Euler(
+            sagittal * weight * 5.0,
+            0,
+            lateral * weight * 5.0,
+            'XYZ'
+          ));
+          item.bone.quaternion.copy(item.baseQuaternion).multiply(quaternion);
+        }
+      }
+
+      // Update each anatomical back region from the same live vertebral points.
+      for (i = 0; i < backRegions.length; i++) {
+        var back = backRegions[i];
+        placeBetween(
+          back.mesh,
+          pointAt(back.config.from),
+          pointAt(back.config.to),
+          back.config.width,
+          back.config.depth
+        );
+      }
+
+      // The seated root stays fixed: only the segmented back bends.
+      if (patientModel) {
+        patientModel.updateMatrixWorld(true);
+        patientModel.traverse(function(node) {
+          if (node.isSkinnedMesh && node.skeleton) node.skeleton.update();
+        });
+      }
+
+      pelvis.position.copy(sacrum);
+      pelvis.position.y += 0.015;
+      pelvis.scale.set(0.28, 0.20, 0.17);
+
+      head.position.copy(c1);
+      head.position.y += 0.11;
+      head.scale.set(0.12, 0.15, 0.11);
+
+      var shoulderY = c7.y + 0.025;
+      var leftShoulderPoint = new THREE.Vector3(c7.x - 0.34, shoulderY, c7.z);
+      var rightShoulderPoint = new THREE.Vector3(c7.x + 0.34, shoulderY, c7.z);
+
+      placeBetween(shoulderBar, leftShoulderPoint, rightShoulderPoint, 0.05, 0.05);
+
+      leftShoulder.position.copy(leftShoulderPoint);
+      leftShoulder.scale.set(0.075, 0.075, 0.075);
+
+      rightShoulder.position.copy(rightShoulderPoint);
+      rightShoulder.scale.set(0.075, 0.075, 0.075);
+
+      var leftHandPoint = leftShoulderPoint.clone().add(new THREE.Vector3(-0.05, -0.43, 0.015));
+      var rightHandPoint = rightShoulderPoint.clone().add(new THREE.Vector3(0.05, -0.43, 0.015));
+
+      placeBetween(leftArm, leftShoulderPoint, leftHandPoint, 0.065, 0.055);
+      placeBetween(rightArm, rightShoulderPoint, rightHandPoint, 0.065, 0.055);
+
+      var leftHip = sacrum.clone().add(new THREE.Vector3(-0.13, -0.04, 0));
+      var rightHip = sacrum.clone().add(new THREE.Vector3(0.13, -0.04, 0));
+      var leftFoot = leftHip.clone().add(new THREE.Vector3(-0.035, -0.53, 0.015));
+      var rightFoot = rightHip.clone().add(new THREE.Vector3(0.035, -0.53, 0.015));
+
+      placeBetween(leftLeg, leftHip, leftFoot, 0.10, 0.085);
+      placeBetween(rightLeg, rightHip, rightFoot, 0.10, 0.085);
+    };
+
+    function animate() {
+      requestAnimationFrame(animate);
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    window.addEventListener("resize", function() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
 </body>
 </html>

@@ -8,7 +8,6 @@ import 'statistics_tab.dart';
 import 'exercises_tab.dart';
 import 'spine_view_tab.dart';
 import 'profile_tab.dart';
-import 'settings_tab.dart';
 
 class MemberDashboardScreen extends ConsumerStatefulWidget {
   const MemberDashboardScreen({super.key});
@@ -28,7 +27,6 @@ class _MemberDashboardScreenState extends ConsumerState<MemberDashboardScreen> {
     const ExercisesTab(),
     const SpineViewTab(),
     const ProfileTab(),
-    const SettingsTab(),
   ];
 
   @override
@@ -106,11 +104,6 @@ class _MemberDashboardScreenState extends ConsumerState<MemberDashboardScreen> {
             icon: Icon(Icons.person_outline),
             selectedIcon: Icon(Icons.person),
             label: 'Profile',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings),
-            label: 'Settings',
           ),
         ],
       ),

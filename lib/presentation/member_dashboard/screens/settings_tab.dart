@@ -164,6 +164,14 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
           SliverAppBar(
             expandedHeight: 180,
             pinned: true,
+            automaticallyImplyLeading: false,
+            leading: Navigator.canPop(context)
+                ? IconButton(
+                    icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                        color: Colors.white),
+                    onPressed: () => Navigator.pop(context),
+                  )
+                : null,
             backgroundColor: Theme.of(context).scaffoldBackgroundColor,
             flexibleSpace: FlexibleSpaceBar(
               background: Container(
