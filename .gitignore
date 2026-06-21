@@ -47,9 +47,14 @@ android/app/google-services.json
 
 
 
-data/
+# data/
 *.pyc
 __pycache__/
 .venv/
 venv/
 serviceAccountKey.json
+
+#Chatbot related
+.env
+python_scripts/.env
+python_scripts/pdfs/

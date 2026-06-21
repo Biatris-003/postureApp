@@ -59,6 +59,9 @@ dependencies:
   webview_flutter: ^4.14.0
   #webview_flutter: ^4.8.0
 
+  http: ^1.2.0        # for API calls
+  flutter_dotenv: ^5.1.0  # to read .env in Flutter
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -81,6 +84,7 @@ flutter:
   # the material Icons class.
   uses-material-design: true
   assets:
+    - .env
     - assets/images/exercises/
     - assets/videos/
     - assets/models/

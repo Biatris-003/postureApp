@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../data/datasources/chat_service_mock.dart';
+import '../../../data/datasources/rag_chat_service.dart';
 
 class AssistantTab extends ConsumerStatefulWidget {
   const AssistantTab({super.key});
@@ -32,7 +32,7 @@ class _AssistantTabState extends ConsumerState<AssistantTab> with SingleTickerPr
   void _sendMessage() async {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
-    
+
     setState(() {
       _messages.add({"sender": "user", "text": text});
       _controller.clear();
@@ -40,10 +40,8 @@ class _AssistantTabState extends ConsumerState<AssistantTab> with SingleTickerPr
     });
     _scrollToBottom();
 
-    // Simulate realistic AI "thinking" and "typing" delay
-    await Future.delayed(const Duration(milliseconds: 1500));
-    final reply = await ref.read(chatServiceProvider).sendAssistantMessage(text);
-    
+    final reply = await ref.read(ragChatServiceProvider).sendMessage(text);
+
     if (mounted) {
       setState(() {
         _isTyping = false;
