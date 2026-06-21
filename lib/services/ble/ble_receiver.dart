@@ -346,6 +346,9 @@ class BleReceiver {
         state.mz = decoded['mz'] as double;
       } else if (type == '0x71_bat') {
         final percentage = decoded['battery'] as int;
+        final rawVal = decoded['rawVal'] as int;
+        // ignore: avoid_print
+        print('[BLE] $mac raw battery register value: $rawVal (decoded: $percentage%)');
         _batteryLevels[mac] = percentage;
         _emitBatteryUpdate();
       }
@@ -441,12 +444,35 @@ class BleReceiver {
       // Battery/Power reply (reg 0x64)
       if (regL == 0x64 && regH == 0x00) {
         final rawVal = bd.getUint16(4, Endian.little);
-        // Map 680 (6.8V) - 840 (8.4V) to 0 - 100 percentage.
-        double pct = ((rawVal - 680) / (840 - 680)) * 100.0;
+        double pct;
+        if (rawVal <= 100) {
+          // Direct percentage (0 - 100)
+          pct = rawVal.toDouble();
+        } else if (rawVal >= 300 && rawVal <= 450) {
+          // 1S battery voltage in centivolts (e.g. 3.7V nominal is 370, 4.2V max is 420)
+          // Map 3.4V (0%) - 4.2V (100%)
+          pct = ((rawVal - 340) / (420 - 340)) * 100.0;
+        } else if (rawVal >= 680 && rawVal <= 840) {
+          // 2S battery voltage in centivolts (e.g. 7.4V nominal is 740, 8.4V max is 840)
+          // Map 6.8V (0%) - 8.4V (100%)
+          pct = ((rawVal - 680) / (840 - 680)) * 100.0;
+        } else if (rawVal >= 3000 && rawVal <= 4500) {
+          // 1S battery voltage in millivolts (e.g. 3700mV - 4200mV)
+          // Map 3400mV (0%) - 4200mV (100%)
+          pct = ((rawVal - 3400) / (4200 - 3400)) * 100.0;
+        } else if (rawVal >= 6800 && rawVal <= 8400) {
+          // 2S battery voltage in millivolts (e.g. 6800mV - 8400mV)
+          // Map 6800mV (0%) - 8400mV (100%)
+          pct = ((rawVal - 6800) / (8400 - 6800)) * 100.0;
+        } else {
+          // Fallback
+          pct = rawVal.toDouble();
+        }
         final pctClamped = pct.clamp(0.0, 100.0).round();
         return {
           'type': '0x71_bat',
           'battery': pctClamped,
+          'rawVal': rawVal,
         };
       }
 
