@@ -8,6 +8,7 @@ import 'presentation/advisor_dashboard/screens/advisor_dashboard_screen.dart';
 import 'providers/user_settings_provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 final firebaseInitializedProvider = Provider<bool>((ref) => throw UnimplementedError());
 
@@ -20,7 +21,18 @@ final bypassErrorProvider = NotifierProvider<BypassNotifier, bool>(BypassNotifie
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+  // await dotenv.load(fileName: '.env');
+
+  try {
+    await dotenv.load(fileName: '.env');
+    print('✅ .env loaded successfully');
+    print('🔑 Pinecone key exists: ${dotenv.env['PINECONE_API_KEY'] != null}');
+    print('🔑 Groq key exists: ${dotenv.env['GROQ_API_KEY'] != null}');
+    print('🔑 Host exists: ${dotenv.env['PINECONE_INDEX_HOST'] != null}');
+  } catch (e) {
+    print('❌ .env load error: $e');
+  }
+
   bool firebaseInitialized = false;
   String? errorMessage;
 
@@ -34,6 +46,7 @@ firebaseInitialized = true;
     debugPrint('Firebase initialization failed: $e');
     errorMessage = e.toString();
   }
+  
 
   runApp(ProviderScope(
     overrides: [
