@@ -243,13 +243,14 @@ class SpineKinematics {
     final dpC7 = deflPitch('C7');
     final drC7 = deflRoll('C7');
 
-    // Step 2: linear interpolation of deflections at each vertebral level.
+    // Step 2: smooth interpolation of deflections at each vertebral level.
     final pitch = List<double>.filled(numLevels, 0.0);
     final roll = List<double>.filled(numLevels, 0.0);
 
     void lerp(int from, int to, double p0, double p1, double r0, double r1) {
       for (int i = from; i <= to; i++) {
-        final t = (i - from) / (to - from);
+        final rawT = (i - from) / (to - from);
+        final t = rawT * rawT * (3 - 2 * rawT);
         pitch[i] = p0 + (p1 - p0) * t;
         roll[i] = r0 + (r1 - r0) * t;
       }

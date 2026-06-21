@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/datasources/auth_service_mock.dart';
-import '../../../data/datasources/advisor_data_service_mock.dart';
+import '../../../data/datasources/exercise_data.dart';
 import '../../../data/datasources/exercise_recommendation_service.dart';
 import '../../../domain/entities/exercises/exercise.dart';
 import 'exercise_detail_screen.dart';
@@ -17,193 +17,204 @@ class ExercisesTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // currentUser kept for future use (e.g. analytics, personalization),
+    // but the plan itself no longer merges with a separate assigned plan.
     final currentUser = ref.watch(authStateProvider);
     final String userId = currentUser?.userId ?? 'unknown';
 
-    // ─── Posture-based recommendations from this week's statistics ──────
-    final postureCountMap = ref
-        .watch(weeklyPostureCountsProvider)
-        .when(
-          data: (counts) => counts,
-          loading: () => const <String, int>{},
-          error: (error, stackTrace) => const <String, int>{},
-        );
-    final recommendationService = ref.watch(
-      exerciseRecommendationServiceProvider,
-    );
-    final recommendedExercises = recommendationService
-        .getRecommendedExercisesFromCounts(postureCountMap);
+    // ─── Posture-based exercises from this week's statistics ────────────
+    // weeklyPostureCountsProvider reads straight from Firestore — it does
+    // NOT depend on the Statistics tab being opened. It's a FutureProvider,
+    // so on first load it's genuinely in a `loading` state for as long as
+    // the Firestore round-trip takes. We must render that loading state
+    // explicitly — treating "still loading" the same as "no postures
+    // qualified" (returning an empty map) is what made this screen look
+    // empty until the data happened to arrive.
+    final postureCountsAsync = ref.watch(weeklyPostureCountsProvider);
 
-    // ─── Assigned plan (the user's default exercise list). Falls back to
-    // the full ExerciseData.catalog if this user has no custom override. ──
-    final mappedExercises = ref.watch(exerciseProvider);
-    final defaultExercises = effectivePlanFor(mappedExercises, userId);
-
-    // ─── Read progress for display ──────────────────────────────
+    // ─── Read progress for display (tracked exercises only) ─────────────
     final progress = ref.watch(exerciseProgressNotifierProvider);
-
-    // ─── Merge: recommended exercises first, then the assigned plan,
-    // deduplicated by title (case-insensitive) so nothing shows twice. ───
-    final List<Exercise> exercises = _mergeExercises(
-      recommended: recommendedExercises,
-      assigned: defaultExercises,
-    );
-
-    if (exercises.isEmpty) {
-      return Center(
-        child: Text(
-          'No exercises assigned currently.',
-          style: TextStyle(
-            fontSize: 16,
-            color: Theme.of(
-              context,
-            ).colorScheme.onSurface.withValues(alpha: 0.5),
-          ),
-        ),
-      );
-    }
-
-    // Titles that came from posture recommendations, so we can badge them
-    // in the list (and so the caption only refers to those cards).
-    final recommendedTitles = recommendedExercises
-        .map((e) => e.title.toLowerCase().trim())
-        .toSet();
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: CustomScrollView(
-        slivers: [
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(24, 32, 24, 16),
-            sliver: SliverToBoxAdapter(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'Your Plan',
-                          style: TextStyle(
-                            fontSize: 32,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -0.5,
-                            color: Theme.of(context).colorScheme.onSurface,
-                          ),
-                        ),
-                      ),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        alignment: WrapAlignment.end,
-                        children: [
-                          _AssessmentButton(
-                            label: 'Weekly Assessment',
-                            icon: Icons.calendar_month_rounded,
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const WeeklyAssessmentScreen(),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  if (recommendedTitles.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8.0),
-                      child: Text(
-                        'Highlighted exercises are based on your posture patterns this week',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.onSurface.withValues(alpha: 0.6),
-                          fontStyle: FontStyle.italic,
-                        ),
-                      ),
-                    ),
-                ],
+      body: postureCountsAsync.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (error, stackTrace) => Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32.0),
+            child: Text(
+              'Could not load your posture data. Please try again.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 16,
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.5),
               ),
             ),
           ),
-          SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-            sliver: SliverList(
-              delegate: SliverChildBuilderDelegate((context, index) {
-                final exercise = exercises[index];
-                final isRecommended = recommendedTitles.contains(
-                  exercise.title.toLowerCase().trim(),
-                );
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 24),
-                  child: _buildExerciseCard(
-                    context,
-                    exercise,
-                    progress,
-                    isRecommended: isRecommended,
+        ),
+        data: (postureCountMap) {
+          final recommendationService = ref.watch(
+            exerciseRecommendationServiceProvider,
+          );
+          final recommended = recommendationService
+              .getRecommendedExercisesFromCounts(postureCountMap);
+
+          // ─── Force-include the 4 tracked exercises at the bottom of the
+          // list, unless they're already present from the posture
+          // recommendation above (in which case they keep their
+          // percentage-ordered position and are not duplicated). ─────────
+          final List<Exercise> exercises = _appendTrackedExercises(
+            recommended: recommended,
+            tracked: trackedExerciseTitles,
+          );
+
+          if (exercises.isEmpty) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32.0),
+                child: Text(
+                  'No exercises needed right now — your posture this week '
+                  'looks good!',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.5),
                   ),
-                );
-              }, childCount: exercises.length),
-            ),
-          ),
-        ],
+                ),
+              ),
+            );
+          }
+
+          return CustomScrollView(
+            slivers: [
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(24, 32, 24, 16),
+                sliver: SliverToBoxAdapter(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Your Plan',
+                              style: TextStyle(
+                                fontSize: 32,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.5,
+                                color:
+                                    Theme.of(context).colorScheme.onSurface,
+                              ),
+                            ),
+                          ),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            alignment: WrapAlignment.end,
+                            children: [
+                              _AssessmentButton(
+                                label: 'Weekly Assessment',
+                                icon: Icons.calendar_month_rounded,
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        const WeeklyAssessmentScreen(),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: Text(
+                          'Ordered by your most frequent posture patterns '
+                          'this week',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurface
+                                .withValues(alpha: 0.6),
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              SliverPadding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate((context, index) {
+                    final exercise = exercises[index];
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 24),
+                      child:
+                          _buildExerciseCard(context, exercise, progress),
+                    );
+                  }, childCount: exercises.length),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
 
-  /// Combines posture-recommended exercises with the user's assigned plan.
-  /// Recommended exercises are listed first (most relevant to this week),
-  /// followed by the rest of the assigned plan. Duplicate titles (case
-  /// insensitive, trimmed) are kept only once — the assigned-plan version
-  /// wins if both exist, since it carries the user's real progress/id.
-  List<Exercise> _mergeExercises({
+  /// Appends the 4 always-tracked exercises (Circumduction, Squatting,
+  /// Side Bending Right, Sit-to-stand) to the bottom of [recommended],
+  /// skipping any tracked title that's already present (case-insensitive,
+  /// trimmed) so nothing is duplicated. Tracked exercises that aren't in
+  /// [recommended] are pulled straight from the catalog by title.
+  List<Exercise> _appendTrackedExercises({
     required List<Exercise> recommended,
-    required List<Exercise> assigned,
+    required List<String> tracked,
   }) {
-    final assignedByTitle = <String, Exercise>{
-      for (final e in assigned) e.title.toLowerCase().trim(): e,
+    final result = <Exercise>[...recommended];
+    final seen = <String>{
+      for (final e in recommended) e.title.toLowerCase().trim(),
     };
 
-    final merged = <Exercise>[];
-    final seen = <String>{};
-
-    // Recommended first — prefer the assigned-plan version if the same
-    // exercise already exists there (keeps a stable id/progress link).
-    for (final rec in recommended) {
-      final key = rec.title.toLowerCase().trim();
-      if (seen.contains(key)) continue;
+    for (final title in tracked) {
+      final key = title.toLowerCase().trim();
+      if (seen.contains(key)) continue; // already present from recommendation
+      final match = ExerciseData.findByTitle(title);
+      if (match == null) continue; // not found in catalog — skip, don't fabricate
       seen.add(key);
-      merged.add(rec);
+      result.add(match);
     }
 
-    // Then the rest of the assigned plan.
-    for (final entry in assignedByTitle.entries) {
-      if (seen.contains(entry.key)) continue;
-      seen.add(entry.key);
-      merged.add(entry.value);
-    }
-
-    return merged;
+    return result;
   }
 
   Widget _buildExerciseCard(
     BuildContext context,
     Exercise exercise,
-    Map<String, int> progress, {
-    bool isRecommended = false,
-  }) {
+    Map<String, int> progress,
+  ) {
     final diffColor = exerciseDifficultyColor(exercise.difficultyLevel);
 
     // Determine if this exercise is one of the 4 tracked
     final isTracked = trackedExerciseTitles.contains(exercise.title);
 
-    // Get completed reps from weekly assessment
-    var repsPerSet = 10;
-    String repsDisplay = '10 Reps × 3 Sets';
+    // Get completed reps from weekly assessment (Firestore). If the user
+    // hasn't completed a Weekly Assessment for this exercise yet, fall
+    // back to the catalog's fixed default reps/sets.
+    var repsPerSet = 5;
+    String repsDisplay = exercise.reps.isNotEmpty
+        ? '${exercise.reps} × ${exercise.sets}'
+        : '5 reps × 3 sets';
     if (isTracked) {
       final coachId = exerciseTitleToCoachId[exercise.title];
       if (coachId != null && progress.containsKey(coachId)) {
@@ -284,22 +295,9 @@ class ExercisesTab extends ConsumerWidget {
               Positioned(
                 top: 16,
                 right: 16,
-                child: Row(
-                  children: [
-                    if (isRecommended)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: _buildTopPill(
-                          icon: Icons.auto_graph_rounded,
-                          label: 'For You',
-                          color: const Color(0xFF6C63FF),
-                        ),
-                      ),
-                    ExerciseCardBadge(
-                      label: exercise.difficultyLevel,
-                      color: diffColor,
-                    ),
-                  ],
+                child: ExerciseCardBadge(
+                  label: exercise.difficultyLevel,
+                  color: diffColor,
                 ),
               ),
               Padding(

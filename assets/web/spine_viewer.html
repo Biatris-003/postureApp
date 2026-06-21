@@ -150,6 +150,8 @@
     var patientCharacterBaseQuaternion = null;
     var patientMixer = null;
     var patientBackBones = [];
+    var patientArmSupports = [];
+    var spineRegistration = { centerX: 0, centerZ: 0.05, backDirection: 1 };
     var patientLoader = new THREE.GLTFLoader();
 
     window.loadPatientModel = function(modelUrl) {
@@ -210,6 +212,30 @@
         var chairRoot = patientModel.getObjectByName('OfficeChair');
         if (chairRoot) chairRoot.position.y += 1.15;
 
+        // Register the visible vertebral chain to the actual body's centre
+        // line and its posterior (chair-facing) side. This keeps the spine
+        // medial from left/right and within the back from a side view.
+        if (patientCharacter) {
+          patientModel.updateMatrixWorld(true);
+          var bodyBounds = new THREE.Box3().setFromObject(patientCharacter);
+          var bodyCentre = bodyBounds.getCenter(new THREE.Vector3());
+          var bodySize = bodyBounds.getSize(new THREE.Vector3());
+          var backDirection = 1;
+          if (chairRoot) {
+            var chairCentre = new THREE.Box3()
+              .setFromObject(chairRoot)
+              .getCenter(new THREE.Vector3());
+            // This seated GLB is rotated 180°, so its anatomical back is on
+            // the depth side opposite the chair bounds' centre comparison.
+            backDirection = chairCentre.z >= bodyCentre.z ? -1 : 1;
+          }
+          spineRegistration = {
+            centerX: bodyCentre.x,
+            centerZ: bodyCentre.z + backDirection * Math.min(bodySize.z * 0.22, 0.10),
+            backDirection: backDirection
+          };
+        }
+
         // Hold the downloaded Mixamo seated pose as the character's base.
         if (gltf.animations.length) {
           patientMixer = new THREE.AnimationMixer(patientModel);
@@ -230,7 +256,7 @@
         // GLB exporters use different prefixes (for example `mixamorig:`,
         // `mixamorig`, or no prefix at all). Discover the real back bones by
         // their canonical ending rather than depending on one exact name.
-        function findBackBone(canonicalName) {
+        function findBone(canonicalName) {
           var match = null;
           patientModel.traverse(function(node) {
             if (match || !node.isBone) return;
@@ -250,7 +276,7 @@
           { name: 'spine2', from: IDX.t4,  to: IDX.c7,  weight: 1.05, maxSagittal: 0.31, maxLateral: 0.17 },
           { name: 'neck',   from: IDX.c7,  to: IDX.c1,  weight: 0.55, maxSagittal: 0.35, maxLateral: 0.22 }
         ].forEach(function(config) {
-          var bone = findBackBone(config.name);
+          var bone = findBone(config.name);
           if (bone) {
             patientBackBones.push({
               bone: bone,
@@ -263,6 +289,20 @@
             });
           }
         });
+
+        // Keep forearms and hands on the chair armrests while the torso bends.
+        // The upper arms remain free to follow the shoulders naturally.
+        ['leftarm', 'leftforearm', 'lefthand', 'rightarm', 'rightforearm', 'righthand']
+          .forEach(function(name) {
+            var bone = findBone(name);
+            if (!bone) return;
+            patientModel.updateMatrixWorld(true);
+            patientArmSupports.push({
+              bone: bone,
+              worldPosition: bone.getWorldPosition(new THREE.Vector3()),
+              worldQuaternion: bone.getWorldQuaternion(new THREE.Quaternion())
+            });
+          });
       },
       undefined,
       function(error) {
@@ -361,6 +401,8 @@
     backRegions.forEach(function(region) { region.mesh.visible = false; });
 
     var linePos = new Float32Array(N * 3);
+    // Character bones and the visible spine share one anatomical path.
+    var bodyLinePos = new Float32Array(N * 3);
     var cordGeometry = new THREE.BufferGeometry();
     cordGeometry.setAttribute("position", new THREE.BufferAttribute(linePos, 3));
 
@@ -461,6 +503,14 @@
       );
     }
 
+    function bodyPointAt(index) {
+      return new THREE.Vector3(
+        bodyLinePos[index * 3],
+        bodyLinePos[index * 3 + 1],
+        bodyLinePos[index * 3 + 2]
+      );
+    }
+
     window.updateSpine = function(flat) {
       var i;
 
@@ -471,11 +521,38 @@
 
         // Flutter coordinates: X forward, Y up, Z lateral.
         // Three.js coordinates: X lateral, Y up, Z depth.
-        var px = z;
+        var bodyPx = -z;
+        var bodyPz = -x + 0.05;
         // Registration offsets align the normalized sensor chain with the
         // seated character's anatomical back rather than its pelvis center.
         var py = y + 0.16;
-        var pz = -x + 0.05;
+        // The skeleton is authored in an opposite world-Z direction to the
+        // visible anatomy. Preserve the correct character mapping, then
+        // mirror only the rendered spine around its neutral back centre.
+        bodyPx = Math.max(-0.13, Math.min(0.13, bodyPx));
+        bodyPz = Math.max(-0.05, Math.min(0.15, bodyPz));
+        var px = spineRegistration.centerX + bodyPx;
+        var pz = spineRegistration.centerZ + (-bodyPz + 0.05);
+
+        // Keep every disc in the centre-back volume of the patient model.
+        px = Math.max(spineRegistration.centerX - 0.13, Math.min(
+          spineRegistration.centerX + 0.13, px));
+        pz = Math.max(spineRegistration.centerZ - 0.10, Math.min(
+          spineRegistration.centerZ + 0.10, pz));
+
+        // Contain the two end vertebrae in their anatomical volumes: S1 stays
+        // in the pelvis and C1 stays inside the neck/head connection.
+        if (i === IDX.sacrum) {
+          px = Math.max(-0.10, Math.min(0.10, px));
+          pz = Math.max(-0.06, Math.min(0.13, pz));
+        } else if (i === IDX.c1) {
+          var c7X = linePos[IDX.c7 * 3];
+          var c7Y = linePos[IDX.c7 * 3 + 1];
+          var c7Z = linePos[IDX.c7 * 3 + 2];
+          px = Math.max(c7X - 0.11, Math.min(c7X + 0.11, px));
+          py = Math.max(c7Y + 0.04, Math.min(c7Y + 0.19, py));
+          pz = Math.max(c7Z - 0.11, Math.min(c7Z + 0.11, pz));
+        }
 
         discs[i].position.set(px, py, pz);
         spinousProcesses[i].position.set(px, py, pz + 0.022);
@@ -483,6 +560,9 @@
         linePos[i * 3] = px;
         linePos[i * 3 + 1] = py;
         linePos[i * 3 + 2] = pz;
+        bodyLinePos[i * 3] = bodyPx;
+        bodyLinePos[i * 3 + 1] = py;
+        bodyLinePos[i * 3 + 2] = bodyPz;
       }
 
       cordGeometry.attributes.position.needsUpdate = true;
@@ -517,15 +597,18 @@
       if (patientBackBones.length) {
         for (i = 0; i < patientBackBones.length; i++) {
           var item = patientBackBones[i];
-          var segmentDirection = pointAt(item.to).sub(pointAt(item.from)).normalize();
+          var segmentDirection = bodyPointAt(item.to).sub(bodyPointAt(item.from)).normalize();
           var sagittal = Math.max(-0.30, Math.min(0.30,
             Math.atan2(segmentDirection.z, segmentDirection.y)));
           var lateral = Math.max(-0.24, Math.min(0.24,
             Math.atan2(segmentDirection.x, segmentDirection.y)));
           // A second, independent human-range guard protects the visual
           // character even if the incoming spine chain is noisy.
+          var requestedSagittal = sagittal * item.weight * 2.4;
+          // Positive local X is extension toward the chair back. Give that
+          // direction a much smaller limit than forward flexion.
           var bodySagittal = Math.max(-item.maxSagittal, Math.min(
-            item.maxSagittal, sagittal * item.weight * 2.4));
+            0.12, requestedSagittal));
           var bodyLateral = Math.max(-item.maxLateral, Math.min(
             item.maxLateral, lateral * item.weight * 2.4));
           quaternion.setFromEuler(new THREE.Euler(
@@ -535,6 +618,25 @@
             'XYZ'
           ));
           item.bone.quaternion.copy(item.baseQuaternion).multiply(quaternion);
+        }
+      }
+
+      // Restore the forearm/hand world transforms after the torso bends. This
+      // keeps the relaxed arms supported by the chair rather than drifting.
+      if (patientModel && patientArmSupports.length) {
+        patientModel.updateMatrixWorld(true);
+        for (i = 0; i < patientArmSupports.length; i++) {
+          var support = patientArmSupports[i];
+          var parent = support.bone.parent;
+          if (!parent) continue;
+          parent.updateMatrixWorld(true);
+          support.bone.position.copy(
+            parent.worldToLocal(support.worldPosition.clone())
+          );
+          var parentQuaternion = parent.getWorldQuaternion(new THREE.Quaternion());
+          support.bone.quaternion.copy(
+            parentQuaternion.invert().multiply(support.worldQuaternion.clone())
+          );
         }
       }
 
