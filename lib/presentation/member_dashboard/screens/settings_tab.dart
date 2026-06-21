@@ -540,10 +540,11 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
     final connected = sensor.connected;
 
     // battery details styling
-    final bColor = isEnabled 
+    final showBattery = isEnabled && connected;
+    final bColor = showBattery 
         ? _batteryColor(battery) 
         : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3);
-    final bIcon = isEnabled 
+    final bIcon = showBattery 
         ? _batteryIcon(battery) 
         : Icons.battery_unknown_rounded;
 
@@ -639,7 +640,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                   Icon(bIcon, size: 18, color: bColor),
                   const SizedBox(width: 4),
                   Text(
-                    isEnabled ? '$battery%' : 'N/A',
+                    showBattery ? '$battery%' : 'N/A',
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w800,
