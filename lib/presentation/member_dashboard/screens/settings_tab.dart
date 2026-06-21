@@ -6,13 +6,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../providers/user_settings_provider.dart';
 import '../../../services/session_provider.dart';
 import '../../../services/ble/ble_receiver.dart';
+import '../../../services/ble/ble_monitor_provider.dart';
 
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Sensor battery model – in production you would read this from BLE device
-// info / battery service characteristic.  For now we keep mock values that
-// animate slightly so the UI feels alive.
+// Sensor info model — populated from the persistent BleMonitorNotifier which
+// reads real battery levels and connection status from the BLE sensors at all
+// times (both during and outside of active sessions).
 // ─────────────────────────────────────────────────────────────────────────────
 class _SensorInfo {
   final String mac;
@@ -68,7 +69,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
     super.dispose();
   }
 
-  List<_SensorInfo> _getSensors(SessionState session, Map<String, bool> enabledMap) {
+  List<_SensorInfo> _getSensors(
+      BleMonitorState monitor, Map<String, bool> enabledMap) {
     return kSensorIdMap.entries.map((e) {
       final mac = e.key;
       final label = e.value;
@@ -80,8 +82,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
       };
       
       final isEnabled = enabledMap[mac] ?? true;
-      final isConnected = session.sensorConnections[mac] ?? false;
-      final battery = session.sensorBatteryLevels[mac] ?? 0;
+      final isConnected = monitor.connections[mac] ?? false;
+      final battery = monitor.batteryLevels[mac] ?? 0;
 
       return _SensorInfo(
         mac: mac,
@@ -134,8 +136,9 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider);
+    final monitor = ref.watch(bleMonitorProvider);
     final enabledMap = ref.watch(enabledSensorsProvider);
-    final sensors = _getSensors(session, enabledMap);
+    final sensors = _getSensors(monitor, enabledMap);
     final isActive = session.status != SessionStatus.idle;
     final isStarting = session.status == SessionStatus.starting;
     final primaryColor = Theme.of(context).primaryColor;
