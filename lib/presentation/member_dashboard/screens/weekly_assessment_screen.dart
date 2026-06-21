@@ -3,13 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../data/datasources/auth_service_mock.dart';
 import '../../../data/datasources/advisor_data_service_mock.dart';
 import '../../../data/datasources/exercise_recommendation_service.dart';
+import '../../../data/datasources/exercise_data.dart';
 import '../../../domain/entities/exercises/exercise.dart';
 import 'exercise_detail_screen.dart';
-import 'statistics_tab.dart';
-import 'exercise_coach_screen.dart';
 import '../../../utils/exercise_constants.dart';
 import '../../../providers/exercise_progress_provider.dart'; // new
-
+import '../../../providers/weekly_posture_counts_provider.dart';
+import '../widgets/exercise_card_badge.dart';
 
 class WeeklyAssessmentScreen extends ConsumerWidget {
   const WeeklyAssessmentScreen({Key? key}) : super(key: key);
@@ -20,10 +20,18 @@ class WeeklyAssessmentScreen extends ConsumerWidget {
     final String userId = currentUser?.userId ?? 'unknown';
 
     // ─── Posture-based recommendations from this week's statistics ──────
-    final postureCountMap = postureCountsCache;
-    final recommendationService = ref.watch(exerciseRecommendationServiceProvider);
-    final recommendedExercises =
-        recommendationService.getRecommendedExercisesFromCounts(postureCountMap);
+    final postureCountMap = ref
+        .watch(weeklyPostureCountsProvider)
+        .when(
+          data: (counts) => counts,
+          loading: () => const <String, int>{},
+          error: (error, stackTrace) => const <String, int>{},
+        );
+    final recommendationService = ref.watch(
+      exerciseRecommendationServiceProvider,
+    );
+    final recommendedExercises = recommendationService
+        .getRecommendedExercisesFromCounts(postureCountMap);
 
     // ─── Assigned plan (the user's default exercise list). Falls back to
     // the full ExerciseData.catalog if this user has no custom override. ──
@@ -43,17 +51,16 @@ class WeeklyAssessmentScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      appBar: AppBar(
-        title: const Text('Weekly Assessment'),
-        centerTitle: true,
-      ),
+      appBar: AppBar(title: const Text('Weekly Assessment'), centerTitle: true),
       body: exercises.isEmpty
           ? Center(
               child: Text(
                 'No exercises assigned currently.',
                 style: TextStyle(
                   fontSize: 16,
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.5),
                 ),
               ),
             )
@@ -81,10 +88,9 @@ class WeeklyAssessmentScreen extends ConsumerWidget {
                               'Includes extra exercises based on your posture patterns this week',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurface
-                                    .withValues(alpha: 0.6),
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurface.withValues(alpha: 0.6),
                                 fontStyle: FontStyle.italic,
                               ),
                             ),
@@ -94,18 +100,18 @@ class WeeklyAssessmentScreen extends ConsumerWidget {
                   ),
                 ),
                 SliverPadding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 8,
+                  ),
                   sliver: SliverList(
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                        final exercise = exercises[index];
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 24),
-                          child: _buildExerciseCard(context, exercise, progress),
-                        );
-                      },
-                      childCount: exercises.length,
-                    ),
+                    delegate: SliverChildBuilderDelegate((context, index) {
+                      final exercise = exercises[index];
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 24),
+                        child: _buildExerciseCard(context, exercise, progress),
+                      );
+                    }, childCount: exercises.length),
                   ),
                 ),
               ],
@@ -139,7 +145,7 @@ class WeeklyAssessmentScreen extends ConsumerWidget {
     // 1) Always-shown 4, in the fixed order given by exercise_constants.dart.
     for (final title in tracked) {
       final key = title.toLowerCase().trim();
-      final match = assignedByTitle[key];
+      final match = assignedByTitle[key] ?? ExerciseData.findByTitle(title);
       if (match == null) continue; // not found in plan — skip, don't fabricate
       if (seen.contains(key)) continue;
       seen.add(key);
@@ -153,26 +159,18 @@ class WeeklyAssessmentScreen extends ConsumerWidget {
       final key = rec.title.toLowerCase().trim();
       if (seen.contains(key)) continue;
       seen.add(key);
-      result.add(assignedByTitle[key] ?? rec);
+      result.add(rec);
     }
 
     return result;
   }
 
-  Color _difficultyColor(String level) {
-    switch (level.toLowerCase()) {
-      case 'intermediate':
-        return const Color(0xFFF59E0B);
-      case 'advanced':
-        return const Color(0xFFEF4444);
-      default:
-        return const Color(0xFF22C55E);
-    }
-  }
-
   Widget _buildExerciseCard(
-      BuildContext context, Exercise exercise, Map<String, int> progress) {
-    final diffColor = _difficultyColor(exercise.difficultyLevel);
+    BuildContext context,
+    Exercise exercise,
+    Map<String, int> progress,
+  ) {
+    final diffColor = exerciseDifficultyColor(exercise.difficultyLevel);
 
     // Determine if this exercise is tracked
     final isTracked = trackedExerciseTitles.contains(exercise.title);
@@ -192,7 +190,7 @@ class WeeklyAssessmentScreen extends ConsumerWidget {
             builder: (context) => ExerciseDetailScreen(
               exercise: exercise,
               heroTag: 'weekly_exercise_image_${exercise.id}',
-              isTracked: isTracked,   // true for the 4, false for others
+              isTracked: isTracked, // true for the 4, false for others
               completedReps: completedReps,
               fromWeeklyAssessment: true, // <-- weekly assessment mode
             ),
@@ -208,7 +206,7 @@ class WeeklyAssessmentScreen extends ConsumerWidget {
               color: Theme.of(context).shadowColor.withValues(alpha: 0.08),
               blurRadius: 20,
               offset: const Offset(0, 10),
-            )
+            ),
           ],
         ),
         child: ClipRRect(
@@ -251,9 +249,13 @@ class WeeklyAssessmentScreen extends ConsumerWidget {
                         padding: const EdgeInsets.only(right: 8),
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 5),
+                            horizontal: 10,
+                            vertical: 5,
+                          ),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF6C63FF).withValues(alpha: 0.85),
+                            color: const Color(
+                              0xFF6C63FF,
+                            ).withValues(alpha: 0.85),
                             borderRadius: BorderRadius.circular(20),
                           ),
                           child: const Text(
@@ -267,22 +269,9 @@ class WeeklyAssessmentScreen extends ConsumerWidget {
                           ),
                         ),
                       ),
-                    Container(
-                      padding:
-                          const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: diffColor.withValues(alpha: 0.85),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        exercise.difficultyLevel,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.3,
-                        ),
-                      ),
+                    ExerciseCardBadge(
+                      label: exercise.difficultyLevel,
+                      color: diffColor,
                     ),
                   ],
                 ),
@@ -323,10 +312,14 @@ class WeeklyAssessmentScreen extends ConsumerWidget {
                             color: Colors.white.withValues(alpha: 0.2),
                             shape: BoxShape.circle,
                             border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.35)),
+                              color: Colors.white.withValues(alpha: 0.35),
+                            ),
                           ),
-                          child: const Icon(Icons.arrow_forward_ios_rounded,
-                              color: Colors.white, size: 14),
+                          child: const Icon(
+                            Icons.arrow_forward_ios_rounded,
+                            color: Colors.white,
+                            size: 14,
+                          ),
                         ),
                       ],
                     ),

@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:smart_posture_app/presentation/member_dashboard/screens/exercise_coach_screen.dart';
 import 'package:video_player/video_player.dart';
 import '../../../domain/entities/exercises/exercise.dart';
+import '../../../utils/exercise_timer.dart';
+import '../widgets/exercise_card_badge.dart';
 
 class ExerciseDetailScreen extends StatefulWidget {
   final Exercise exercise;
   final String? heroTag;
-  final bool isTracked;         // true only for the 4 exercises in weekly assessment
-  final int? completedReps;     // saved rep count from weekly assessment (if any)
-  final bool fromWeeklyAssessment; // true when opened from the weekly assessment tab
+  final bool isTracked; // true only for the 4 exercises in weekly assessment
+  final int? completedReps; // saved rep count from weekly assessment (if any)
+  final bool
+  fromWeeklyAssessment; // true when opened from the weekly assessment tab
 
   const ExerciseDetailScreen({
     super.key,
@@ -174,40 +177,9 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
   };
 
   // ─── Seconds per rep ─────────────────────────────────────────────────
-  static const Map<String, int> _secPerRep = {
-    'Bird Dog': 6,
-    'Cat-Cow': 5,
-    'Chest Stretch': 30,
-    'Circumduction': 4,
-    'Dead Bug': 6,
-    'Glute Bridge': 4,
-    'Hip Flexor Stretch': 30,
-    'Left Side Plank': 20,
-    'Leg Lift': 4,
-    'Micro Break Walking': 60,
-    'Neck Rotation': 4,
-    'Plank': 20,
-    'Right Side Leg Raise': 4,
-    'Side Bending Right': 20,
-    'Sit-to-Stand': 4,
-    'Squatting': 4,
-    'Thoracic Back Extension': 7,
-    'Tummy Twist': 4,
-  };
-
   static const Color _accentColor = Color(0xFF6C63FF);
 
   // ─── Helper: Calculate total timer ──────────────────────────────────
-  String _calculateTotalTimer(int perSetReps, String title) {
-    // Force 3 sets for every exercise
-    const int sets = 3;
-    final secPerRep = _secPerRep[title] ?? 4;
-    final restSeconds = (sets - 1) * 15; // 30 sec rest between 3 sets
-    final totalSeconds = perSetReps * sets * secPerRep + restSeconds;
-    final mins = (totalSeconds / 60).ceil();
-    return '$mins min';
-  }
-
   // ─── Lifecycle ──────────────────────────────────────────────────────
   @override
   void initState() {
@@ -247,17 +219,6 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     super.dispose();
   }
 
-  Color _difficultyColor(String level) {
-    switch (level.toLowerCase()) {
-      case 'intermediate':
-        return const Color(0xFFF59E0B);
-      case 'advanced':
-        return const Color(0xFFEF4444);
-      default:
-        return const Color(0xFF22C55E);
-    }
-  }
-
   List<String> _getInstructions() {
     return _exerciseInstructions[widget.exercise.title] ??
         widget.exercise.description
@@ -271,7 +232,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final diffColor = _difficultyColor(widget.exercise.difficultyLevel);
+    final diffColor = exerciseDifficultyColor(widget.exercise.difficultyLevel);
     final holdDuration = _getHoldDuration();
 
     // ─── Compute per‑set reps for main tab ──────────────────────────────
@@ -293,7 +254,10 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     // ─── Timer label (only for main tab) ─────────────────────────────
     String timerLabel = '';
     if (!widget.fromWeeklyAssessment) {
-      timerLabel = _calculateTotalTimer(perSetReps, widget.exercise.title);
+      timerLabel = calculateExerciseTotalTime(
+        perSetReps,
+        widget.exercise.title,
+      );
     }
 
     return Scaffold(
@@ -309,7 +273,8 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                   MaterialPageRoute(
                     builder: (context) => ExerciseCoachScreen(
                       exerciseTitle: widget.exercise.title,
-                      trackReps: widget.isTracked, // true only for the 4 in weekly assessment
+                      trackReps: widget
+                          .isTracked, // true only for the 4 in weekly assessment
                     ),
                   ),
                 );
@@ -384,7 +349,8 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                             label: widget.exercise.difficultyLevel,
                             color: diffColor,
                           ),
-                          if (!widget.fromWeeklyAssessment && timerLabel.isNotEmpty)
+                          if (!widget.fromWeeklyAssessment &&
+                              timerLabel.isNotEmpty)
                             _buildImageBadge(
                               icon: Icons.timer_outlined,
                               label: timerLabel,
@@ -679,8 +645,8 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                       _videoError
                           ? 'Video unavailable'
                           : _videoInitialized
-                              ? 'Tap to play demo'
-                              : 'Loading demo...',
+                          ? 'Tap to play demo'
+                          : 'Loading demo...',
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.9),
                         fontSize: 15,
@@ -714,7 +680,10 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
   }
 
   // ─── Instruction steps ──────────────────────────────────────────────
-  List<Widget> _buildInstructionSteps(BuildContext context, List<String> steps) {
+  List<Widget> _buildInstructionSteps(
+    BuildContext context,
+    List<String> steps,
+  ) {
     return steps.asMap().entries.map((entry) {
       final stepNum = entry.key + 1;
       final text = entry.value;
@@ -748,10 +717,9 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                 style: TextStyle(
                   fontSize: 15,
                   height: 1.55,
-                  color: Theme.of(context)
-                      .colorScheme
-                      .onSurface
-                      .withValues(alpha: 0.8),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.8),
                   fontWeight: FontWeight.w500,
                 ),
               ),

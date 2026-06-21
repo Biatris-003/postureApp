@@ -17,22 +17,49 @@ class SpinePoint3D {
 /// Sensor order matches the LOSO model: L5, T4, C7, T12.
 /// All sensors also present here as named map keys.
 class SpineKinematics {
+  // Conservative seated human-motion limits. These cap noisy IMU values before
+  // they are converted into the visible vertebral chain.
+  static const double _maxSagittalDeflection = 40 * pi / 180;
+  static const double _maxLateralDeflection = 20 * pi / 180;
+  static const double _maxVisibleSagittalAngle = 45 * pi / 180;
+  static const double _maxVisibleLateralAngle = 22 * pi / 180;
+
   // ── Vertebral anatomy ────────────────────────────────────────────────────
 
   /// Names from sacrum (index 0) to C1 (index 24).
   static const List<String> levelNames = [
     'S1',
-    'L5', 'L4', 'L3', 'L2', 'L1',
-    'T12', 'T11', 'T10', 'T9', 'T8', 'T7', 'T6', 'T5', 'T4',
-    'T3', 'T2', 'T1', 'C7',
-    'C6', 'C5', 'C4', 'C3', 'C2', 'C1',
+    'L5',
+    'L4',
+    'L3',
+    'L2',
+    'L1',
+    'T12',
+    'T11',
+    'T10',
+    'T9',
+    'T8',
+    'T7',
+    'T6',
+    'T5',
+    'T4',
+    'T3',
+    'T2',
+    'T1',
+    'C7',
+    'C6',
+    'C5',
+    'C4',
+    'C3',
+    'C2',
+    'C1',
   ];
 
   // Sensor vertebra indices in the chain.
-  static const int idxL5  = 1;
+  static const int idxL5 = 1;
   static const int idxT12 = 6;
-  static const int idxT4  = 14;
-  static const int idxC7  = 18;
+  static const int idxT4 = 14;
+  static const int idxC7 = 18;
   static const int numLevels = 25;
 
   // Approximate inter-vertebral segment lengths (mm), normalized to sum = 1.
@@ -42,11 +69,11 @@ class SpineKinematics {
 
   static List<double> _buildSegLengths() {
     final raw = [
-      35.0,                             // S1 → L5
-      25.0, 25.0, 25.0, 25.0, 25.0,    // L5 → T12
+      35.0, // S1 → L5
+      25.0, 25.0, 25.0, 25.0, 25.0, // L5 → T12
       22.0, 22.0, 22.0, 22.0,
-      22.0, 22.0, 22.0, 22.0,          // T12 → T4
-      22.0, 22.0, 22.0, 22.0,          // T4  → C7
+      22.0, 22.0, 22.0, 22.0, // T12 → T4
+      22.0, 22.0, 22.0, 22.0, // T4  → C7
       15.0, 15.0, 15.0, 15.0, 15.0, 15.0, // C7 → C1
     ];
     final total = raw.fold(0.0, (a, b) => a + b);
@@ -57,10 +84,10 @@ class SpineKinematics {
 
   // Training-mean pitch (rad) per sensor — represents neutral sitting posture.
   static const Map<String, double> _neutralPitch = {
-    'L5':  1.207,
+    'L5': 1.207,
     'T12': 1.221,
-    'T4':  0.848,
-    'C7':  0.701,
+    'T4': 0.848,
+    'C7': 0.701,
   };
 
   // Anatomical S-curve: per-vertebra pitch offset (rad) baked into the neutral
@@ -70,31 +97,31 @@ class SpineKinematics {
   static final List<double> _baselinePitch = () {
     const d = pi / 180;
     return [
-       0 * d,  // S1
-       6 * d,  // L5  ─┐
-       8 * d,  // L4   │ lumbar lordosis (~30° total)
-       9 * d,  // L3   │
-       8 * d,  // L2   │
-       5 * d,  // L1  ─┘
-       2 * d,  // T12
-      -3 * d,  // T11 ─┐
-      -5 * d,  // T10  │
-      -6 * d,  // T9   │ thoracic kyphosis (~35° total)
-      -7 * d,  // T8   │
-      -7 * d,  // T7   │
-      -6 * d,  // T6   │
-      -5 * d,  // T5   │
-      -4 * d,  // T4  ─┘
-      -3 * d,  // T3
-      -2 * d,  // T2
-      -1 * d,  // T1
-       2 * d,  // C7  ─┐
-       4 * d,  // C6   │ cervical lordosis (~22° total)
-       5 * d,  // C5   │
-       5 * d,  // C4   │
-       4 * d,  // C3   │
-       3 * d,  // C2   │
-       3 * d,  // C1  ─┘
+      0 * d, // S1
+      6 * d, // L5  ─┐
+      8 * d, // L4   │ lumbar lordosis (~30° total)
+      9 * d, // L3   │
+      8 * d, // L2   │
+      5 * d, // L1  ─┘
+      2 * d, // T12
+      -3 * d, // T11 ─┐
+      -5 * d, // T10  │
+      -6 * d, // T9   │ thoracic kyphosis (~35° total)
+      -7 * d, // T8   │
+      -7 * d, // T7   │
+      -6 * d, // T6   │
+      -5 * d, // T5   │
+      -4 * d, // T4  ─┘
+      -3 * d, // T3
+      -2 * d, // T2
+      -1 * d, // T1
+      2 * d, // C7  ─┐
+      4 * d, // C6   │ cervical lordosis (~22° total)
+      5 * d, // C5   │
+      5 * d, // C4   │
+      4 * d, // C3   │
+      3 * d, // C2   │
+      3 * d, // C1  ─┘
     ];
   }();
 
@@ -123,17 +150,20 @@ class SpineKinematics {
   /// Extracting Euler angles from this relative quaternion gives true
   /// sagittal/lateral deflections with no cross-axis coupling: a pure
   /// forward bend produces only pitch, not a spurious roll.
-  static List<double> _relativeQuat(List<double> qNeutral, List<double> qCurrent) {
+  static List<double> _relativeQuat(
+    List<double> qNeutral,
+    List<double> qCurrent,
+  ) {
     final qn = _reorderWxyz(qNeutral);
     final qc = _reorderWxyz(qCurrent);
     // Inverse of a unit quaternion = its conjugate: [w, -x, -y, -z]
-    final nw =  qn[0], nx = -qn[1], ny = -qn[2], nz = -qn[3];
-    final cw =  qc[0], cx =  qc[1], cy =  qc[2], cz =  qc[3];
+    final nw = qn[0], nx = -qn[1], ny = -qn[2], nz = -qn[3];
+    final cw = qc[0], cx = qc[1], cy = qc[2], cz = qc[3];
     return [
-      nw*cw - nx*cx - ny*cy - nz*cz,
-      nw*cx + nx*cw + ny*cz - nz*cy,
-      nw*cy - nx*cz + ny*cw + nz*cx,
-      nw*cz + nx*cy - ny*cx + nz*cw,
+      nw * cw - nx * cx - ny * cy - nz * cz,
+      nw * cx + nx * cw + ny * cz - nz * cy,
+      nw * cy - nx * cz + ny * cw + nz * cx,
+      nw * cz + nx * cy - ny * cx + nz * cw,
     ];
   }
 
@@ -181,8 +211,12 @@ class SpineKinematics {
       final q = sensorQuats[id];
       if (q == null) return 0.0;
       final nq = neutralQuats?[id];
-      if (nq != null) return -_quatPitch(_relativeQuat(nq, q));
-      return -(_quatPitch(_reorderWxyz(q)) - (_neutralPitch[id] ?? 0.0));
+      final value = nq != null
+          ? -_quatPitch(_relativeQuat(nq, q))
+          : -(_quatPitch(_reorderWxyz(q)) - (_neutralPitch[id] ?? 0.0));
+      return value
+          .clamp(-_maxSagittalDeflection, _maxSagittalDeflection)
+          .toDouble();
     }
 
     // Lateral deflection: uses yaw (rotation around Z=posterior) because with
@@ -192,37 +226,47 @@ class SpineKinematics {
       final q = sensorQuats[id];
       if (q == null) return 0.0;
       final nq = neutralQuats?[id];
-      if (nq != null) return _quatYaw(_relativeQuat(nq, q));
-      return _wrapAngle(_quatYaw(_reorderWxyz(q)));
+      final value = nq != null
+          ? _quatYaw(_relativeQuat(nq, q))
+          : _wrapAngle(_quatYaw(_reorderWxyz(q)));
+      return value
+          .clamp(-_maxLateralDeflection, _maxLateralDeflection)
+          .toDouble();
     }
 
-    final dpL5  = deflPitch('L5');  final drL5  = deflRoll('L5');
-    final dpT12 = deflPitch('T12'); final drT12 = deflRoll('T12');
-    final dpT4  = deflPitch('T4');  final drT4  = deflRoll('T4');
-    final dpC7  = deflPitch('C7');  final drC7  = deflRoll('C7');
+    final dpL5 = deflPitch('L5');
+    final drL5 = deflRoll('L5');
+    final dpT12 = deflPitch('T12');
+    final drT12 = deflRoll('T12');
+    final dpT4 = deflPitch('T4');
+    final drT4 = deflRoll('T4');
+    final dpC7 = deflPitch('C7');
+    final drC7 = deflRoll('C7');
 
     // Step 2: linear interpolation of deflections at each vertebral level.
     final pitch = List<double>.filled(numLevels, 0.0);
-    final roll  = List<double>.filled(numLevels, 0.0);
+    final roll = List<double>.filled(numLevels, 0.0);
 
     void lerp(int from, int to, double p0, double p1, double r0, double r1) {
       for (int i = from; i <= to; i++) {
         final t = (i - from) / (to - from);
         pitch[i] = p0 + (p1 - p0) * t;
-        roll[i]  = r0 + (r1 - r0) * t;
+        roll[i] = r0 + (r1 - r0) * t;
       }
     }
 
     // Sacrum (index 0) extrapolated from L5.
-    pitch[0] = dpL5; roll[0] = drL5;
+    pitch[0] = dpL5;
+    roll[0] = drL5;
 
-    lerp(idxL5,  idxT12, dpL5,  dpT12, drL5,  drT12);
-    lerp(idxT12, idxT4,  dpT12, dpT4,  drT12, drT4);
-    lerp(idxT4,  idxC7,  dpT4,  dpC7,  drT4,  drC7);
+    lerp(idxL5, idxT12, dpL5, dpT12, drL5, drT12);
+    lerp(idxT12, idxT4, dpT12, dpT4, drT12, drT4);
+    lerp(idxT4, idxC7, dpT4, dpC7, drT4, drC7);
 
     // C7 → C1: extrapolate from C7.
     for (int i = idxC7; i < numLevels; i++) {
-      pitch[i] = dpC7; roll[i] = drC7;
+      pitch[i] = dpC7;
+      roll[i] = drC7;
     }
 
     // Step 3: integrate forward-kinematic chain from sacrum upward.
@@ -233,8 +277,12 @@ class SpineKinematics {
     positions.add(const SpinePoint3D(0, 0, 0)); // sacrum at origin
 
     for (int i = 0; i < numLevels - 1; i++) {
-      final p = _baselinePitch[i] + pitch[i];
-      final r = roll[i];
+      final p = (_baselinePitch[i] + pitch[i])
+          .clamp(-_maxVisibleSagittalAngle, _maxVisibleSagittalAngle)
+          .toDouble();
+      final r = roll[i]
+          .clamp(-_maxVisibleLateralAngle, _maxVisibleLateralAngle)
+          .toDouble();
       final l = segLengths[i];
       px += l * sin(p) * cos(r);
       py += l * cos(p) * cos(r);
@@ -267,18 +315,21 @@ class SpineKinematics {
       return _wrapAngle(_quatYaw(_reorderWxyz(q)));
     }
 
-    final pL5  = pitch('L5');
+    final pL5 = pitch('L5');
     final pT12 = pitch('T12');
-    final pT4  = pitch('T4');
-    final pC7  = pitch('C7');
+    final pT4 = pitch('T4');
+    final pC7 = pitch('C7');
 
     const toDeg = 180 / pi;
     return {
-      'lumbarLordosis':    (pL5  - pT12).abs() * toDeg,
-      'thoracicKyphosis':  (pT12 - pT4).abs()  * toDeg,
-      'cervicalLordosis':  (pT4  - pC7).abs()  * toDeg,
-      'lateralDeviation':  [
-        rollDefl('L5'), rollDefl('T12'), rollDefl('T4'), rollDefl('C7'),
+      'lumbarLordosis': (pL5 - pT12).abs() * toDeg,
+      'thoracicKyphosis': (pT12 - pT4).abs() * toDeg,
+      'cervicalLordosis': (pT4 - pC7).abs() * toDeg,
+      'lateralDeviation': [
+        rollDefl('L5'),
+        rollDefl('T12'),
+        rollDefl('T4'),
+        rollDefl('C7'),
       ].map((r) => r.abs() * toDeg).reduce((a, b) => a > b ? a : b),
     };
   }

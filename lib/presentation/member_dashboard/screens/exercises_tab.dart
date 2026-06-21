@@ -5,11 +5,12 @@ import '../../../data/datasources/advisor_data_service_mock.dart';
 import '../../../data/datasources/exercise_recommendation_service.dart';
 import '../../../domain/entities/exercises/exercise.dart';
 import 'exercise_detail_screen.dart';
-import 'statistics_tab.dart';
-import 'rula_assessment_screen.dart';
 import 'weekly_assessment_screen.dart';
 import '../../../utils/exercise_constants.dart';
+import '../../../utils/exercise_timer.dart';
 import '../../../providers/exercise_progress_provider.dart';
+import '../../../providers/weekly_posture_counts_provider.dart';
+import '../widgets/exercise_card_badge.dart';
 
 class ExercisesTab extends ConsumerWidget {
   const ExercisesTab({Key? key}) : super(key: key);
@@ -20,11 +21,18 @@ class ExercisesTab extends ConsumerWidget {
     final String userId = currentUser?.userId ?? 'unknown';
 
     // ─── Posture-based recommendations from this week's statistics ──────
-    final postureCountMap = postureCountsCache;
-    final recommendationService =
-        ref.watch(exerciseRecommendationServiceProvider);
-    final recommendedExercises =
-        recommendationService.getRecommendedExercisesFromCounts(postureCountMap);
+    final postureCountMap = ref
+        .watch(weeklyPostureCountsProvider)
+        .when(
+          data: (counts) => counts,
+          loading: () => const <String, int>{},
+          error: (error, stackTrace) => const <String, int>{},
+        );
+    final recommendationService = ref.watch(
+      exerciseRecommendationServiceProvider,
+    );
+    final recommendedExercises = recommendationService
+        .getRecommendedExercisesFromCounts(postureCountMap);
 
     // ─── Assigned plan (the user's default exercise list). Falls back to
     // the full ExerciseData.catalog if this user has no custom override. ──
@@ -47,10 +55,9 @@ class ExercisesTab extends ConsumerWidget {
           'No exercises assigned currently.',
           style: TextStyle(
             fontSize: 16,
-            color: Theme.of(context)
-                .colorScheme
-                .onSurface
-                .withValues(alpha: 0.5),
+            color: Theme.of(
+              context,
+            ).colorScheme.onSurface.withValues(alpha: 0.5),
           ),
         ),
       );
@@ -97,8 +104,7 @@ class ExercisesTab extends ConsumerWidget {
                             onTap: () => Navigator.push(
                               context,
                               MaterialPageRoute(
-                                builder: (_) =>
-                                    const WeeklyAssessmentScreen(),
+                                builder: (_) => const WeeklyAssessmentScreen(),
                               ),
                             ),
                           ),
@@ -113,10 +119,9 @@ class ExercisesTab extends ConsumerWidget {
                         'Highlighted exercises are based on your posture patterns this week',
                         style: TextStyle(
                           fontSize: 12,
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurface
-                              .withValues(alpha: 0.6),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurface.withValues(alpha: 0.6),
                           fontStyle: FontStyle.italic,
                         ),
                       ),
@@ -128,23 +133,21 @@ class ExercisesTab extends ConsumerWidget {
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
             sliver: SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final exercise = exercises[index];
-                  final isRecommended = recommendedTitles
-                      .contains(exercise.title.toLowerCase().trim());
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 24),
-                    child: _buildExerciseCard(
-                      context,
-                      exercise,
-                      progress,
-                      isRecommended: isRecommended,
-                    ),
-                  );
-                },
-                childCount: exercises.length,
-              ),
+              delegate: SliverChildBuilderDelegate((context, index) {
+                final exercise = exercises[index];
+                final isRecommended = recommendedTitles.contains(
+                  exercise.title.toLowerCase().trim(),
+                );
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 24),
+                  child: _buildExerciseCard(
+                    context,
+                    exercise,
+                    progress,
+                    isRecommended: isRecommended,
+                  ),
+                );
+              }, childCount: exercises.length),
             ),
           ),
         ],
@@ -174,7 +177,7 @@ class ExercisesTab extends ConsumerWidget {
       final key = rec.title.toLowerCase().trim();
       if (seen.contains(key)) continue;
       seen.add(key);
-      merged.add(assignedByTitle[key] ?? rec);
+      merged.add(rec);
     }
 
     // Then the rest of the assigned plan.
@@ -187,29 +190,19 @@ class ExercisesTab extends ConsumerWidget {
     return merged;
   }
 
-  Color _difficultyColor(String level) {
-    switch (level.toLowerCase()) {
-      case 'intermediate':
-        return const Color(0xFFF59E0B);
-      case 'advanced':
-        return const Color(0xFFEF4444);
-      default:
-        return const Color(0xFF22C55E);
-    }
-  }
-
   Widget _buildExerciseCard(
     BuildContext context,
     Exercise exercise,
     Map<String, int> progress, {
     bool isRecommended = false,
   }) {
-    final diffColor = _difficultyColor(exercise.difficultyLevel);
+    final diffColor = exerciseDifficultyColor(exercise.difficultyLevel);
 
     // Determine if this exercise is one of the 4 tracked
     final isTracked = trackedExerciseTitles.contains(exercise.title);
 
     // Get completed reps from weekly assessment
+    var repsPerSet = 10;
     String repsDisplay = '10 Reps × 3 Sets';
     if (isTracked) {
       final coachId = exerciseTitleToCoachId[exercise.title];
@@ -217,7 +210,7 @@ class ExercisesTab extends ConsumerWidget {
         final completed = progress[coachId]!;
         if (completed > 0) {
           // Calculate: Ceiling(completedReps / 3) Reps × 3 Sets
-          final repsPerSet = (completed / 3).ceil();
+          repsPerSet = (completed / 3).ceil();
           repsDisplay = '$repsPerSet Reps × 3 Sets';
         }
       }
@@ -254,7 +247,7 @@ class ExercisesTab extends ConsumerWidget {
               color: Theme.of(context).shadowColor.withValues(alpha: 0.08),
               blurRadius: 20,
               offset: const Offset(0, 10),
-            )
+            ),
           ],
         ),
         child: ClipRRect(
@@ -302,8 +295,7 @@ class ExercisesTab extends ConsumerWidget {
                           color: const Color(0xFF6C63FF),
                         ),
                       ),
-                    _buildTopPill(
-                      icon: Icons.bar_chart_rounded,
+                    ExerciseCardBadge(
                       label: exercise.difficultyLevel,
                       color: diffColor,
                     ),
@@ -334,9 +326,22 @@ class ExercisesTab extends ConsumerWidget {
                                 ),
                               ),
                               const SizedBox(height: 6),
-                              _buildTopPill(
-                                icon: Icons.repeat_rounded,
-                                label: repsDisplay,
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 6,
+                                children: [
+                                  _buildTopPill(
+                                    icon: Icons.repeat_rounded,
+                                    label: repsDisplay,
+                                  ),
+                                  _buildTopPill(
+                                    icon: Icons.timer_outlined,
+                                    label: calculateExerciseTotalTime(
+                                      repsPerSet,
+                                      exercise.title,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),

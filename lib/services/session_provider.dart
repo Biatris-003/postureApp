@@ -4,7 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../data/datasources/analytics_service.dart';
 import '../data/datasources/auth_service_mock.dart';
+import '../providers/weekly_posture_counts_provider.dart';
 import 'ble/ble_monitor_provider.dart';
 import 'ml/realtime_processor.dart';
 
@@ -183,8 +185,8 @@ class LatestQuatsNotifier extends Notifier<Map<String, List<double>>?> {
 
 final latestQuatsProvider =
     NotifierProvider<LatestQuatsNotifier, Map<String, List<double>>?>(
-  LatestQuatsNotifier.new,
-);
+      LatestQuatsNotifier.new,
+    );
 
 class SessionNotifier extends Notifier<SessionState> {
   RealtimeProcessor? _processor;
@@ -231,7 +233,7 @@ class SessionNotifier extends Notifier<SessionState> {
     final bleReceiver = ref.read(bleMonitorProvider.notifier).bleReceiver;
 
     _processor = RealtimeProcessor(bleReceiver: bleReceiver);
-    
+
     // Read the current enabled configuration
     final enabledSensors = ref.read(enabledSensorsProvider);
     final enabledMacs = enabledSensors.entries
@@ -295,7 +297,9 @@ class SessionNotifier extends Notifier<SessionState> {
     final finalBest = streakStart != null
         ? () {
             final dur = DateTime.now().difference(streakStart).inSeconds;
-            return dur > state.bestStreakSeconds ? dur : state.bestStreakSeconds;
+            return dur > state.bestStreakSeconds
+                ? dur
+                : state.bestStreakSeconds;
           }()
         : state.bestStreakSeconds;
 
@@ -319,16 +323,12 @@ class SessionNotifier extends Notifier<SessionState> {
       if (user == null) return;
 
       final db = FirebaseFirestore.instance;
-
-      final patientSnapshot = await db
-          .collection('patients')
-          .where('userId', isEqualTo: user.uid)
-          .limit(1)
-          .get();
-
-      if (patientSnapshot.docs.isEmpty) return;
-
-      final patientId = patientSnapshot.docs.first.id;
+      final analytics = AnalyticsService();
+      final patientId = await analytics.resolvePatientId(
+        firebaseUid: user.userId,
+        legacyUserId: user.uid,
+      );
+      if (patientId == null) return;
 
       final sessionRef = await db.collection('sessionResults').add({
         'patientId': patientId,
@@ -337,8 +337,9 @@ class SessionNotifier extends Notifier<SessionState> {
         'durationMinutes': data.duration.inMinutes,
         'sessionScore': data.sessionScore,
         'status': 'completed',
-        'posturePercentages': data.posturePercentages
-            .map((k, v) => MapEntry(k.toString(), v)),
+        'posturePercentages': data.posturePercentages.map(
+          (k, v) => MapEntry(k.toString(), v),
+        ),
       });
 
       // Write each prediction event to postureClassifications so the
@@ -346,8 +347,10 @@ class SessionNotifier extends Notifier<SessionState> {
       const chunkSize = 500;
       final timeline = data.timeline;
       for (int i = 0; i < timeline.length; i += chunkSize) {
-        final chunk =
-            timeline.sublist(i, (i + chunkSize).clamp(0, timeline.length));
+        final chunk = timeline.sublist(
+          i,
+          (i + chunkSize).clamp(0, timeline.length),
+        );
         final batch = db.batch();
         for (final event in chunk) {
           batch.set(db.collection('postureClassifications').doc(), {
@@ -362,6 +365,17 @@ class SessionNotifier extends Notifier<SessionState> {
         }
         await batch.commit();
       }
+
+      // Recalculate today's saved aggregate using every completed session
+      // from today, then refresh the rolling weekly recommendations.
+      final todayClassifications = await analytics.getClassificationsByDays(
+        patientId,
+        1,
+      );
+      if (todayClassifications.isNotEmpty) {
+        await analytics.saveDailyStatistics(patientId, todayClassifications);
+      }
+      ref.invalidate(weeklyPostureCountsProvider);
     } catch (e) {
       debugPrint('[SessionNotifier] failed to save session: $e');
     }
@@ -379,8 +393,9 @@ class SessionNotifier extends Notifier<SessionState> {
   }
 }
 
-final sessionProvider =
-    NotifierProvider<SessionNotifier, SessionState>(SessionNotifier.new);
+final sessionProvider = NotifierProvider<SessionNotifier, SessionState>(
+  SessionNotifier.new,
+);
 
 class EnabledSensorsNotifier extends Notifier<Map<String, bool>> {
   @override
@@ -394,12 +409,11 @@ class EnabledSensorsNotifier extends Notifier<Map<String, bool>> {
   }
 
   void toggleSensor(String mac) {
-    state = {
-      ...state,
-      mac: !(state[mac] ?? true),
-    };
+    state = {...state, mac: !(state[mac] ?? true)};
   }
 }
 
 final enabledSensorsProvider =
-    NotifierProvider<EnabledSensorsNotifier, Map<String, bool>>(EnabledSensorsNotifier.new);
+    NotifierProvider<EnabledSensorsNotifier, Map<String, bool>>(
+      EnabledSensorsNotifier.new,
+    );

@@ -4,6 +4,40 @@ import '../../domain/entities/posture_classification.dart';
 class AnalyticsService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
+  /// Resolves the patient identifier used by saved sessions and posture
+  /// classifications. Newer records link patients with Firebase's UID;
+  /// the legacy app userId is retained as a fallback for older records.
+  Future<String?> resolvePatientId({
+    required String firebaseUid,
+    String? legacyUserId,
+  }) async {
+    Future<String?> findByUserId(String userId) async {
+      final snapshot = await _db
+          .collection('patients')
+          .where('userId', isEqualTo: userId)
+          .limit(1)
+          .get();
+      if (snapshot.docs.isEmpty) return null;
+      final document = snapshot.docs.first;
+      return document.data()['patientId'] as String? ?? document.id;
+    }
+
+    final byFirebaseUid = await findByUserId(firebaseUid);
+    if (byFirebaseUid != null) return byFirebaseUid;
+
+    if (legacyUserId != null && legacyUserId != firebaseUid) {
+      final byLegacyUserId = await findByUserId(legacyUserId);
+      if (byLegacyUserId != null) return byLegacyUserId;
+    }
+
+    final directDocument = await _db
+        .collection('patients')
+        .doc(firebaseUid)
+        .get();
+    if (!directDocument.exists) return null;
+    return directDocument.data()?['patientId'] as String? ?? directDocument.id;
+  }
+
   // All posture labels
   static const List<String> allLabels = [
     'upright',
@@ -19,9 +53,15 @@ class AnalyticsService {
 
   // ─── FETCH DATA ───────────────────────────────────────────────
 
-  Future<List<PostureClassification>> getTodayClassifications(String patientId) async {
+  Future<List<PostureClassification>> getTodayClassifications(
+    String patientId,
+  ) async {
     final now = DateTime.now();
-    final todayMidnight = DateTime(now.year, now.month, now.day); // 00:00:00 today
+    final todayMidnight = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ); // 00:00:00 today
     final sinceTimestamp = Timestamp.fromDate(todayMidnight);
 
     final snapshot = await _db
@@ -36,10 +76,13 @@ class AnalyticsService {
         .toList();
   }
 
-
-  Future<void> saveDailyStatistics(String patientId, List<PostureClassification> data) async {
+  Future<void> saveDailyStatistics(
+    String patientId,
+    List<PostureClassification> data,
+  ) async {
     final now = DateTime.now();
-    final dateKey = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    final dateKey =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
     final docId = '${patientId}_$dateKey'; // e.g. "test_patient_001_2026-05-09"
 
     final percentages = calculatePosturePercentages(data);
@@ -80,9 +123,10 @@ class AnalyticsService {
     }, SetOptions(merge: true));
   }
 
-
   // Get all classifications for a patient (all time)
-  Future<List<PostureClassification>> getAllClassifications(String patientId) async {
+  Future<List<PostureClassification>> getAllClassifications(
+    String patientId,
+  ) async {
     final snapshot = await _db
         .collection('postureClassifications')
         .where('patientId', isEqualTo: patientId)
@@ -96,7 +140,9 @@ class AnalyticsService {
 
   // Get classifications for a specific session
   Future<List<PostureClassification>> getSessionClassifications(
-      String patientId, String sessionId) async {
+    String patientId,
+    String sessionId,
+  ) async {
     final snapshot = await _db
         .collection('postureClassifications')
         .where('patientId', isEqualTo: patientId)
@@ -113,7 +159,7 @@ class AnalyticsService {
   // Future<List<PostureClassification>> getClassificationsByDays(
   //     String patientId, int days) async {
   //   final since = DateTime.now().subtract(Duration(days: days));
-  //   final sinceTimestamp = Timestamp.fromDate(since); 
+  //   final sinceTimestamp = Timestamp.fromDate(since);
   //   final snapshot = await _db
   //       .collection('postureClassifications')
   //       .where('patientId', isEqualTo: patientId)
@@ -127,17 +173,63 @@ class AnalyticsService {
   // }
 
   Future<List<PostureClassification>> getClassificationsByDays(
-    String patientId, int days) async {
-    // ✨ CHANGE: Instead of filtering by date, get ALL data
-    final snapshot = await _db
+    String patientId,
+    int days,
+  ) async {
+    final since = DateTime.now().subtract(Duration(days: days));
+    final classificationSnapshot = await _db
         .collection('postureClassifications')
         .where('patientId', isEqualTo: patientId)
-        .orderBy('timestamp')
         .get();
 
-    return snapshot.docs
+    final classifications = classificationSnapshot.docs
         .map((doc) => PostureClassification.fromMap(doc.data(), doc.id))
+        .where((classification) => !classification.timestamp.isBefore(since))
         .toList();
+    classifications.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    if (classifications.isNotEmpty) return classifications;
+
+    final statisticsSnapshot = await _db
+        .collection('statistics')
+        .where('patientId', isEqualTo: patientId)
+        .get();
+
+    final result = <PostureClassification>[];
+    for (final document in statisticsSnapshot.docs) {
+      final data = document.data();
+      final day = _statisticsDate(data['timestamp'] ?? data['date']);
+      if (day == null || day.isBefore(since)) continue;
+
+      final counts = data['counts'];
+      if (counts is! Map) continue;
+
+      for (final label in allLabels) {
+        final count = (counts[label] as num?)?.toInt() ?? 0;
+        for (var index = 0; index < count; index++) {
+          result.add(
+            PostureClassification(
+              classificationId: '${document.id}_${label}_$index',
+              readingId: '',
+              modelId: 'daily_statistics',
+              postureLabel: label,
+              confidenceScore: 1,
+              timestamp: day.add(Duration(seconds: index)),
+              patientId: patientId,
+              sessionId: '',
+            ),
+          );
+        }
+      }
+    }
+
+    result.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    return result;
+  }
+
+  DateTime? _statisticsDate(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is String) return DateTime.tryParse(value);
+    return null;
   }
 
   // ─── CALCULATE STATS ──────────────────────────────────────────
@@ -159,11 +251,14 @@ class AnalyticsService {
   }
 
   // Calculate % for each posture
-  Map<String, double> calculatePosturePercentages(List<PostureClassification> data) {
+  Map<String, double> calculatePosturePercentages(
+    List<PostureClassification> data,
+  ) {
     if (data.isEmpty) return {for (var l in allLabels) l: 0.0};
     final counts = calculatePostureCounts(data);
-    return counts.map((label, count) =>
-        MapEntry(label, (count / data.length) * 100));
+    return counts.map(
+      (label, count) => MapEntry(label, (count / data.length) * 100),
+    );
   }
 
   // Most problematic posture (most frequent bad posture)
@@ -172,16 +267,15 @@ class AnalyticsService {
     if (badData.isEmpty) return 'none';
     final counts = calculatePostureCounts(badData);
     counts.remove(goodPosture);
-    return counts.entries
-        .reduce((a, b) => a.value > b.value ? a : b)
-        .key;
+    return counts.entries.reduce((a, b) => a.value > b.value ? a : b).key;
   }
 
   // Trend data — group by day, calc daily score
   // Returns list of {date, score} for line chart
   // Daily — group by hour (24 points)
   List<Map<String, dynamic>> calculateHourlyTrend(
-      List<PostureClassification> data) {
+    List<PostureClassification> data,
+  ) {
     final trend = <Map<String, dynamic>>[];
     final now = DateTime.now();
     final dayStart = DateTime(now.year, now.month, now.day);
@@ -190,9 +284,12 @@ class AnalyticsService {
       final hourStart = dayStart.add(Duration(hours: hour));
       final hourEnd = hourStart.add(const Duration(hours: 1));
 
-      final hourData = data.where((d) =>
-          d.timestamp.isAfter(hourStart) &&
-          d.timestamp.isBefore(hourEnd)).toList();
+      final hourData = data
+          .where(
+            (d) =>
+                d.timestamp.isAfter(hourStart) && d.timestamp.isBefore(hourEnd),
+          )
+          .toList();
 
       trend.add({
         'label': '${hour.toString().padLeft(2, '0')}:00',
@@ -205,7 +302,8 @@ class AnalyticsService {
 
   // Weekly — group by day (7 points)
   List<Map<String, dynamic>> calculateWeeklyTrend(
-      List<PostureClassification> data) {
+    List<PostureClassification> data,
+  ) {
     final trend = <Map<String, dynamic>>[];
     final dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -214,9 +312,12 @@ class AnalyticsService {
       final dayStart = DateTime(day.year, day.month, day.day);
       final dayEnd = dayStart.add(const Duration(days: 1));
 
-      final dayData = data.where((d) =>
-          d.timestamp.isAfter(dayStart) &&
-          d.timestamp.isBefore(dayEnd)).toList();
+      final dayData = data
+          .where(
+            (d) =>
+                d.timestamp.isAfter(dayStart) && d.timestamp.isBefore(dayEnd),
+          )
+          .toList();
 
       trend.add({
         'label': dayNames[dayStart.weekday - 1],
@@ -229,7 +330,8 @@ class AnalyticsService {
 
   // Monthly — group by day (30 points)
   List<Map<String, dynamic>> calculateMonthlyTrend(
-      List<PostureClassification> data) {
+    List<PostureClassification> data,
+  ) {
     final trend = <Map<String, dynamic>>[];
 
     for (int i = 29; i >= 0; i--) {
@@ -237,9 +339,12 @@ class AnalyticsService {
       final dayStart = DateTime(day.year, day.month, day.day);
       final dayEnd = dayStart.add(const Duration(days: 1));
 
-      final dayData = data.where((d) =>
-          d.timestamp.isAfter(dayStart) &&
-          d.timestamp.isBefore(dayEnd)).toList();
+      final dayData = data
+          .where(
+            (d) =>
+                d.timestamp.isAfter(dayStart) && d.timestamp.isBefore(dayEnd),
+          )
+          .toList();
 
       trend.add({
         'label': '${day.day}/${day.month}',
@@ -255,9 +360,10 @@ class AnalyticsService {
     final doc = await _db.collection('sessionResults').doc(sessionId).get();
     if (!doc.exists) return 0;
     final data = doc.data()!;
-    if (data.containsKey('durationMinutes')) return data['durationMinutes'] as int;
+    if (data.containsKey('durationMinutes'))
+      return data['durationMinutes'] as int;
     final start = (data['startTimestamp'] as Timestamp).toDate();
-    final end   = (data['endTimestamp']   as Timestamp).toDate();
+    final end = (data['endTimestamp'] as Timestamp).toDate();
     return end.difference(start).inMinutes;
   }
 

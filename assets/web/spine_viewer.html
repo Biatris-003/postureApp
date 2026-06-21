@@ -227,16 +227,42 @@
           if (shin) shin.scale.y = 1.45;
         });
 
-        ['mixamorig:Spine', 'mixamorig:Spine1', 'mixamorig:Spine2', 'mixamorig:Neck']
-          .forEach(function(name) {
-            var bone = patientModel.getObjectByName(name);
-            if (bone) {
-              patientBackBones.push({
-                bone: bone,
-                baseQuaternion: bone.quaternion.clone()
-              });
+        // GLB exporters use different prefixes (for example `mixamorig:`,
+        // `mixamorig`, or no prefix at all). Discover the real back bones by
+        // their canonical ending rather than depending on one exact name.
+        function findBackBone(canonicalName) {
+          var match = null;
+          patientModel.traverse(function(node) {
+            if (match || !node.isBone) return;
+            var normalized = (node.name || '')
+              .toLowerCase()
+              .replace(/[^a-z0-9]/g, '');
+            if (normalized === canonicalName || normalized.endsWith(canonicalName)) {
+              match = node;
             }
           });
+          return match;
+        }
+
+        [
+          { name: 'spine',  from: IDX.l5,  to: IDX.t12, weight: 0.70, maxSagittal: 0.31, maxLateral: 0.17 },
+          { name: 'spine1', from: IDX.t12, to: IDX.t4,  weight: 0.90, maxSagittal: 0.26, maxLateral: 0.14 },
+          { name: 'spine2', from: IDX.t4,  to: IDX.c7,  weight: 1.05, maxSagittal: 0.31, maxLateral: 0.17 },
+          { name: 'neck',   from: IDX.c7,  to: IDX.c1,  weight: 0.55, maxSagittal: 0.35, maxLateral: 0.22 }
+        ].forEach(function(config) {
+          var bone = findBackBone(config.name);
+          if (bone) {
+            patientBackBones.push({
+              bone: bone,
+              from: config.from,
+              to: config.to,
+              weight: config.weight,
+              maxSagittal: config.maxSagittal,
+              maxLateral: config.maxLateral,
+              baseQuaternion: bone.quaternion.clone()
+            });
+          }
+        });
       },
       undefined,
       function(error) {
@@ -486,23 +512,26 @@
       var c7 = pointAt(IDX.c7);
       var c1 = pointAt(IDX.c1);
 
-      var spineDirection = c7.clone().sub(sacrum).normalize();
-      var sagittal = Math.max(-0.38, Math.min(0.38,
-        Math.atan2(spineDirection.z, spineDirection.y) * 3.0));
-      var lateral = Math.max(-0.30, Math.min(0.30,
-        Math.atan2(spineDirection.x, spineDirection.y) * 3.0));
-
-      // The live direction is distributed through the character's back bones.
+      // Move each real body region from the corresponding sensor-to-sensor
+      // segment. The root, pelvis, thighs, shins and chair are not touched.
       if (patientBackBones.length) {
         for (i = 0; i < patientBackBones.length; i++) {
           var item = patientBackBones[i];
-          // Lower spine moves least; upper spine/neck move most. This keeps
-          // hips and legs seated while creating a natural segmented back.
-          var weight = [0.30, 0.60, 0.90, 1.10][i] || 1.0;
+          var segmentDirection = pointAt(item.to).sub(pointAt(item.from)).normalize();
+          var sagittal = Math.max(-0.30, Math.min(0.30,
+            Math.atan2(segmentDirection.z, segmentDirection.y)));
+          var lateral = Math.max(-0.24, Math.min(0.24,
+            Math.atan2(segmentDirection.x, segmentDirection.y)));
+          // A second, independent human-range guard protects the visual
+          // character even if the incoming spine chain is noisy.
+          var bodySagittal = Math.max(-item.maxSagittal, Math.min(
+            item.maxSagittal, sagittal * item.weight * 2.4));
+          var bodyLateral = Math.max(-item.maxLateral, Math.min(
+            item.maxLateral, lateral * item.weight * 2.4));
           quaternion.setFromEuler(new THREE.Euler(
-            sagittal * weight * 5.0,
+            bodySagittal,
             0,
-            lateral * weight * 5.0,
+            bodyLateral,
             'XYZ'
           ));
           item.bone.quaternion.copy(item.baseQuaternion).multiply(quaternion);

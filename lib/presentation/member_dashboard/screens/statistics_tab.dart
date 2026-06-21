@@ -27,11 +27,10 @@
 // }
 
 // // Provider for posture counts
-// final postureCountsProvider = 
+// final postureCountsProvider =
 //     StateNotifierProvider<PostureCountsNotifier, Map<String, int>>(
 //       (ref) => PostureCountsNotifier(),
 //     );
-
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -50,10 +49,6 @@ import '../../../data/datasources/auth_service_mock.dart';
 
 // Provider for analytics service
 final analyticsServiceProvider = Provider((ref) => AnalyticsService());
-
-// ✨ Global variable to hold posture counts (accessed by exercises tab)
-Map<String, int> postureCountsCache = {};
-
 
 // The current user ID will be retrieved from the authStateProvider
 
@@ -110,18 +105,13 @@ class _StatisticsTabState extends ConsumerState<StatisticsTab> {
       }
 
       // 🔥 STEP 1: FIND patientId FROM patients TABLE
-      final patientSnapshot = await FirebaseFirestore.instance
-          .collection('patients')
-          .where('userId', isEqualTo: firebaseUid)
-          .limit(1)
-          .get();
-
-      if (patientSnapshot.docs.isEmpty) {
+      final patientId = await service.resolvePatientId(
+        firebaseUid: firebaseUid,
+        legacyUserId: user?.uid,
+      );
+      if (patientId == null) {
         throw Exception("Patient record not found for this user");
       }
-
-      final patientDoc = patientSnapshot.docs.first;
-      final patientId = patientDoc['patientId'];
 
       print('🧠 firebaseUid = $firebaseUid');
       print('🧠 resolved patientId = $patientId');
@@ -137,10 +127,9 @@ class _StatisticsTabState extends ConsumerState<StatisticsTab> {
         data = await service.getClassificationsByDays(patientId, 30);
       }
 
-      print('📊 Data retrieved: ${data.length} readings for patient $patientId');
-
-      final counts = service.calculatePostureCounts(data);
-      postureCountsCache = counts;
+      print(
+        '📊 Data retrieved: ${data.length} readings for patient $patientId',
+      );
 
       setState(() {
         _data = data;
@@ -151,7 +140,6 @@ class _StatisticsTabState extends ConsumerState<StatisticsTab> {
         await service.saveDailyStatistics(patientId, data);
         print('✅ Daily statistics saved for $patientId');
       }
-
     } catch (e) {
       print('❌ loadData error: $e');
       setState(() {
@@ -163,15 +151,15 @@ class _StatisticsTabState extends ConsumerState<StatisticsTab> {
 
   @override
   Widget build(BuildContext context) {
-    final service = ref.read(analyticsServiceProvider);
-
     return Scaffold(
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text('Analytics',
-            style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Analytics',
+          style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.picture_as_pdf, color: Colors.blue),
@@ -181,61 +169,68 @@ class _StatisticsTabState extends ConsumerState<StatisticsTab> {
           ),
         ],
       ),
-body: Builder(
-  builder: (context) {
-    final service = ref.read(analyticsServiceProvider);
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_data.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.bar_chart, size: 48, color: Colors.grey.shade300),
-            const SizedBox(height: 8),
-            Text('No data available',
-                style: TextStyle(color: Colors.grey.shade500)),
-          ],
-        ),
-      );
-    }
-    return RefreshIndicator(
-      onRefresh: _loadData,
-      child: SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildTimeRangeSelector(),
-            const SizedBox(height: 24),
-            _buildSummaryCards(service),
-            const SizedBox(height: 32),
-            const Text('Posture Distribution',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16),
-            _buildPieChart(service),
-            const SizedBox(height: 32),
-            Text(
-              _selectedTimeRange == 0
-                  ? 'Today — Posture by Hour'
-                  : _selectedTimeRange == 1
-                      ? 'This Week — Daily Score'
-                      : 'This Month — Daily Score',
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+      body: Builder(
+        builder: (context) {
+          final service = ref.read(analyticsServiceProvider);
+          if (_isLoading) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (_data.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.bar_chart, size: 48, color: Colors.grey.shade300),
+                  const SizedBox(height: 8),
+                  Text(
+                    'No data available',
+                    style: TextStyle(color: Colors.grey.shade500),
+                  ),
+                ],
+              ),
+            );
+          }
+          return RefreshIndicator(
+            onRefresh: _loadData,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildTimeRangeSelector(),
+                  const SizedBox(height: 24),
+                  _buildSummaryCards(service),
+                  const SizedBox(height: 32),
+                  const Text(
+                    'Posture Distribution',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildPieChart(service),
+                  const SizedBox(height: 32),
+                  Text(
+                    _selectedTimeRange == 0
+                        ? 'Today — Posture by Hour'
+                        : _selectedTimeRange == 1
+                        ? 'This Week — Daily Score'
+                        : 'This Month — Daily Score',
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildLineChart(service),
+                  const SizedBox(height: 32),
+                  _buildMostProblematicCard(service),
+                  const SizedBox(height: 20),
+                ],
+              ),
             ),
-            const SizedBox(height: 16),
-            _buildLineChart(service),
-            const SizedBox(height: 32),
-            _buildMostProblematicCard(service),
-            const SizedBox(height: 20),
-          ],
-        ),
+          );
+        },
       ),
-    );
-  },
-    ),
     );
   }
 
@@ -294,7 +289,11 @@ body: Builder(
             title: 'Upright Score',
             value: '$score%',
             icon: Icons.score,
-            color: score >= 70 ? Colors.green : score >= 40 ? Colors.orange : Colors.red,
+            color: score >= 70
+                ? Colors.green
+                : score >= 40
+                ? Colors.orange
+                : Colors.red,
           ),
         ),
         const SizedBox(width: 16),
@@ -331,7 +330,7 @@ body: Builder(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 15)
+          BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 15),
         ],
       ),
       child: Column(
@@ -339,492 +338,533 @@ body: Builder(
         children: [
           Icon(icon, color: color, size: 24),
           const SizedBox(height: 8),
-          Text(value,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          Text(
+            value,
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
           const SizedBox(height: 4),
-          Text(title,
-              style: TextStyle(color: Colors.grey.shade600, fontSize: 11)),
+          Text(
+            title,
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 11),
+          ),
         ],
       ),
     );
   }
 
-// Widget _buildPieChart(AnalyticsService service) {
-//   final percentages = service.calculatePosturePercentages(_data);
-//   final counts = service.calculatePostureCounts(_data);
-//   int? _touchedIndex;
+  // Widget _buildPieChart(AnalyticsService service) {
+  //   final percentages = service.calculatePosturePercentages(_data);
+  //   final counts = service.calculatePostureCounts(_data);
+  //   int? _touchedIndex;
 
-//   final postureConfig = [
-//     {'key': 'upright',          'name': 'Upright',          'color': const Color(0xFF4CAF50)},
-//     {'key': 'forward_bending',  'name': 'Forward Bending',  'color': const Color(0xFFFF9800)},
-//     {'key': 'backward_bending', 'name': 'Backward Bending', 'color': const Color(0xFF2196F3)},
-//     {'key': 'slouching',        'name': 'Slouching',        'color': const Color(0xFFF44336)},
-//     {'key': 'left_bending',     'name': 'Left Bending',     'color': const Color(0xFF9C27B0)},
-//     {'key': 'right_bending',    'name': 'Right Bending',    'color': const Color(0xFF00BCD4)},
-//   ];
+  //   final postureConfig = [
+  //     {'key': 'upright',          'name': 'Upright',          'color': const Color(0xFF4CAF50)},
+  //     {'key': 'forward_bending',  'name': 'Forward Bending',  'color': const Color(0xFFFF9800)},
+  //     {'key': 'backward_bending', 'name': 'Backward Bending', 'color': const Color(0xFF2196F3)},
+  //     {'key': 'slouching',        'name': 'Slouching',        'color': const Color(0xFFF44336)},
+  //     {'key': 'left_bending',     'name': 'Left Bending',     'color': const Color(0xFF9C27B0)},
+  //     {'key': 'right_bending',    'name': 'Right Bending',    'color': const Color(0xFF00BCD4)},
+  //   ];
 
-//   return StatefulBuilder(
-//     builder: (context, setLocalState) {
-//       return Container(
-//         padding: const EdgeInsets.all(20),
-//         decoration: BoxDecoration(
-//           color: Colors.white,
-//           borderRadius: BorderRadius.circular(24),
-//           boxShadow: [BoxShadow(
-//             color: Colors.black.withOpacity(0.06),
-//             blurRadius: 20,
-//             offset: const Offset(0, 4),
-//           )],
-//         ),
-//         child: Column(
-//           children: [
-//             // Pie chart
-//             SizedBox(
-//               height: 260,
-//               child: Stack(
-//                 alignment: Alignment.center,
-//                 children: [
-//                   PieChart(
-//                     PieChartData(
-//                       sectionsSpace: 3,
-//                       centerSpaceRadius: 70,
-//                       startDegreeOffset: -90,
-//                       pieTouchData: PieTouchData(
-//                         touchCallback: (event, response) {
-//                           setLocalState(() {
-//                             if (response == null || response.touchedSection == null) {
-//                               _touchedIndex = null;
-//                             } else {
-//                               _touchedIndex = response.touchedSection!.touchedSectionIndex;
-//                             }
-//                           });
-//                         },
-//                       ),
-//                       sections: () {
-//                         final validPostures = postureConfig
-//                             .where((p) => (percentages[p['key']] ?? 0) > 0)
-//                             .toList();
-//                         return validPostures.asMap().entries.map((entry) {
-//                           final index = entry.key;
-//                           final p = entry.value;
-//                           final pct = percentages[p['key'] as String] ?? 0;
-//                           final isTouched = _touchedIndex == index;
-//                           return PieChartSectionData(
-//                             color: p['color'] as Color,
-//                             value: pct,
-//                             title: '',
-//                             radius: isTouched ? 58 : 48,
-//                             badgeWidget: isTouched
-//                                 ? Container(
-//                                     padding: const EdgeInsets.symmetric(
-//                                         horizontal: 8, vertical: 4),
-//                                     decoration: BoxDecoration(
-//                                       color: p['color'] as Color,
-//                                       borderRadius: BorderRadius.circular(8),
-//                                       boxShadow: [BoxShadow(
-//                                         color: (p['color'] as Color).withOpacity(0.4),
-//                                         blurRadius: 8,
-//                                       )],
-//                                     ),
-//                                     child: Text(
-//                                       '${pct.toStringAsFixed(1)}%',
-//                                       style: const TextStyle(
-//                                         color: Colors.white,
-//                                         fontSize: 11,
-//                                         fontWeight: FontWeight.bold,
-//                                       ),
-//                                     ),
-//                                   )
-//                                 : null,
-//                             badgePositionPercentageOffset: 1.3,
-//                           );
-//                         }).toList();
-//                       }(),
-//                     ),
-//                   ),
-//                   // Center — shows score or touched posture info
-//                   _touchedIndex != null
-//                       ? Builder(builder: (context) {
-//                           final validPostures = postureConfig
-//                               .where((p) => (percentages[p['key']] ?? 0) > 0)
-//                               .toList();
-//                           if (_touchedIndex! >= validPostures.length) {
-//                             return const SizedBox();
-//                           }
-//                           final p = validPostures[_touchedIndex!];
-//                           final pct = percentages[p['key'] as String] ?? 0;
-//                           final count = counts[p['key'] as String] ?? 0;
-//                           return Column(
-//                             mainAxisSize: MainAxisSize.min,
-//                             children: [
-//                               Text(
-//                                 '${pct.toStringAsFixed(1)}%',
-//                                 style: TextStyle(
-//                                   fontSize: 26,
-//                                   fontWeight: FontWeight.bold,
-//                                   color: p['color'] as Color,
-//                                 ),
-//                               ),
-//                               Text(
-//                                 '$count readings',
-//                                 style: TextStyle(
-//                                   fontSize: 11,
-//                                   color: Colors.grey.shade500,
-//                                 ),
-//                               ),
-//                               const SizedBox(height: 2),
-//                               Text(
-//                                 p['name'] as String,
-//                                 textAlign: TextAlign.center,
-//                                 style: TextStyle(
-//                                   fontSize: 10,
-//                                   color: Colors.grey.shade600,
-//                                   fontWeight: FontWeight.w600,
-//                                 ),
-//                               ),
-//                             ],
-//                           );
-//                         })
-//                       : Column(
-//                           mainAxisSize: MainAxisSize.min,
-//                           children: [
-//                             Text(
-//                               '${service.calculatePostureScore(_data)}%',
-//                               style: const TextStyle(
-//                                 fontSize: 30,
-//                                 fontWeight: FontWeight.bold,
-//                                 color: Color(0xFF4CAF50),
-//                               ),
-//                             ),
-//                             Text(
-//                               'Posture\nScore',
-//                               textAlign: TextAlign.center,
-//                               style: TextStyle(
-//                                 fontSize: 11,
-//                                 color: Colors.grey.shade500,
-//                                 height: 1.4,
-//                               ),
-//                             ),
-//                           ],
-//                         ),
-//                 ],
-//               ),
-//             ),
+  //   return StatefulBuilder(
+  //     builder: (context, setLocalState) {
+  //       return Container(
+  //         padding: const EdgeInsets.all(20),
+  //         decoration: BoxDecoration(
+  //           color: Colors.white,
+  //           borderRadius: BorderRadius.circular(24),
+  //           boxShadow: [BoxShadow(
+  //             color: Colors.black.withOpacity(0.06),
+  //             blurRadius: 20,
+  //             offset: const Offset(0, 4),
+  //           )],
+  //         ),
+  //         child: Column(
+  //           children: [
+  //             // Pie chart
+  //             SizedBox(
+  //               height: 260,
+  //               child: Stack(
+  //                 alignment: Alignment.center,
+  //                 children: [
+  //                   PieChart(
+  //                     PieChartData(
+  //                       sectionsSpace: 3,
+  //                       centerSpaceRadius: 70,
+  //                       startDegreeOffset: -90,
+  //                       pieTouchData: PieTouchData(
+  //                         touchCallback: (event, response) {
+  //                           setLocalState(() {
+  //                             if (response == null || response.touchedSection == null) {
+  //                               _touchedIndex = null;
+  //                             } else {
+  //                               _touchedIndex = response.touchedSection!.touchedSectionIndex;
+  //                             }
+  //                           });
+  //                         },
+  //                       ),
+  //                       sections: () {
+  //                         final validPostures = postureConfig
+  //                             .where((p) => (percentages[p['key']] ?? 0) > 0)
+  //                             .toList();
+  //                         return validPostures.asMap().entries.map((entry) {
+  //                           final index = entry.key;
+  //                           final p = entry.value;
+  //                           final pct = percentages[p['key'] as String] ?? 0;
+  //                           final isTouched = _touchedIndex == index;
+  //                           return PieChartSectionData(
+  //                             color: p['color'] as Color,
+  //                             value: pct,
+  //                             title: '',
+  //                             radius: isTouched ? 58 : 48,
+  //                             badgeWidget: isTouched
+  //                                 ? Container(
+  //                                     padding: const EdgeInsets.symmetric(
+  //                                         horizontal: 8, vertical: 4),
+  //                                     decoration: BoxDecoration(
+  //                                       color: p['color'] as Color,
+  //                                       borderRadius: BorderRadius.circular(8),
+  //                                       boxShadow: [BoxShadow(
+  //                                         color: (p['color'] as Color).withOpacity(0.4),
+  //                                         blurRadius: 8,
+  //                                       )],
+  //                                     ),
+  //                                     child: Text(
+  //                                       '${pct.toStringAsFixed(1)}%',
+  //                                       style: const TextStyle(
+  //                                         color: Colors.white,
+  //                                         fontSize: 11,
+  //                                         fontWeight: FontWeight.bold,
+  //                                       ),
+  //                                     ),
+  //                                   )
+  //                                 : null,
+  //                             badgePositionPercentageOffset: 1.3,
+  //                           );
+  //                         }).toList();
+  //                       }(),
+  //                     ),
+  //                   ),
+  //                   // Center — shows score or touched posture info
+  //                   _touchedIndex != null
+  //                       ? Builder(builder: (context) {
+  //                           final validPostures = postureConfig
+  //                               .where((p) => (percentages[p['key']] ?? 0) > 0)
+  //                               .toList();
+  //                           if (_touchedIndex! >= validPostures.length) {
+  //                             return const SizedBox();
+  //                           }
+  //                           final p = validPostures[_touchedIndex!];
+  //                           final pct = percentages[p['key'] as String] ?? 0;
+  //                           final count = counts[p['key'] as String] ?? 0;
+  //                           return Column(
+  //                             mainAxisSize: MainAxisSize.min,
+  //                             children: [
+  //                               Text(
+  //                                 '${pct.toStringAsFixed(1)}%',
+  //                                 style: TextStyle(
+  //                                   fontSize: 26,
+  //                                   fontWeight: FontWeight.bold,
+  //                                   color: p['color'] as Color,
+  //                                 ),
+  //                               ),
+  //                               Text(
+  //                                 '$count readings',
+  //                                 style: TextStyle(
+  //                                   fontSize: 11,
+  //                                   color: Colors.grey.shade500,
+  //                                 ),
+  //                               ),
+  //                               const SizedBox(height: 2),
+  //                               Text(
+  //                                 p['name'] as String,
+  //                                 textAlign: TextAlign.center,
+  //                                 style: TextStyle(
+  //                                   fontSize: 10,
+  //                                   color: Colors.grey.shade600,
+  //                                   fontWeight: FontWeight.w600,
+  //                                 ),
+  //                               ),
+  //                             ],
+  //                           );
+  //                         })
+  //                       : Column(
+  //                           mainAxisSize: MainAxisSize.min,
+  //                           children: [
+  //                             Text(
+  //                               '${service.calculatePostureScore(_data)}%',
+  //                               style: const TextStyle(
+  //                                 fontSize: 30,
+  //                                 fontWeight: FontWeight.bold,
+  //                                 color: Color(0xFF4CAF50),
+  //                               ),
+  //                             ),
+  //                             Text(
+  //                               'Posture\nScore',
+  //                               textAlign: TextAlign.center,
+  //                               style: TextStyle(
+  //                                 fontSize: 11,
+  //                                 color: Colors.grey.shade500,
+  //                                 height: 1.4,
+  //                               ),
+  //                             ),
+  //                           ],
+  //                         ),
+  //                 ],
+  //               ),
+  //             ),
 
-//             const SizedBox(height: 16),
-//             const Divider(height: 1, color: Color(0xFFEEEEEE)),
-//             const SizedBox(height: 16),
+  //             const SizedBox(height: 16),
+  //             const Divider(height: 1, color: Color(0xFFEEEEEE)),
+  //             const SizedBox(height: 16),
 
-//             // Legend — 2 column grid, each posture as a pill
-//             GridView.builder(
-//               shrinkWrap: true,
-//               physics: const NeverScrollableScrollPhysics(),
-//               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-//                 crossAxisCount: 2,
-//                 childAspectRatio: 3.8,
-//                 crossAxisSpacing: 8,
-//                 mainAxisSpacing: 8,
-//               ),
-//               itemCount: postureConfig.length,
-//               itemBuilder: (context, index) {
-//                 final p = postureConfig[index];
-//                 final key = p['key'] as String;
-//                 final pct = percentages[key] ?? 0;
-//                 final count = counts[key] ?? 0;
-//                 final color = p['color'] as Color;
-//                 return Container(
-//                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-//                   decoration: BoxDecoration(
-//                     color: color.withOpacity(0.08),
-//                     borderRadius: BorderRadius.circular(10),
-//                     border: Border.all(color: color.withOpacity(0.25)),
-//                   ),
-//                   child: Row(
-//                     children: [
-//                       Container(
-//                         width: 10,
-//                         height: 10,
-//                         decoration: BoxDecoration(
-//                           color: color,
-//                           shape: BoxShape.circle,
-//                         ),
-//                       ),
-//                       const SizedBox(width: 6),
-//                       Expanded(
-//                         child: Column(
-//                           crossAxisAlignment: CrossAxisAlignment.start,
-//                           mainAxisAlignment: MainAxisAlignment.center,
-//                           children: [
-//                             Text(
-//                               p['name'] as String,
-//                               style: const TextStyle(
-//                                 fontSize: 10,
-//                                 fontWeight: FontWeight.w600,
-//                               ),
-//                               overflow: TextOverflow.ellipsis,
-//                             ),
-//                             Text(
-//                               '$count · ${pct.toStringAsFixed(1)}%',
-//                               style: TextStyle(
-//                                 fontSize: 10,
-//                                 color: Colors.grey.shade500,
-//                               ),
-//                             ),
-//                           ],
-//                         ),
-//                       ),
-//                     ],
-//                   ),
-//                 );
-//               },
-//             ),
-//           ],
-//         ),
-//       );
-//     },
-//   );
-// }
-Widget _buildPieChart(AnalyticsService service) {
-  final percentages = service.calculatePosturePercentages(_data);
-  final counts = service.calculatePostureCounts(_data);
-  
-  // Timer for auto-reset
-  Timer? resetTimer;
-  
-  final postureConfig = [
-    {'key': 'upright',          'name': 'Upright',          'color': const Color(0xFF5B8FF9)},
-    {'key': 'forward_bending',  'name': 'Forward Bending',  'color': const Color(0xFF61DDAA)},
-    {'key': 'backward_bending', 'name': 'Backward Bending', 'color': const Color(0xFFFFB44C)},
-    {'key': 'slouching',        'name': 'Slouching',        'color': const Color(0xFFFF6B6B)},
-    {'key': 'left_bending',     'name': 'Left Bending',     'color': const Color(0xFFB37FEB)},
-    {'key': 'right_bending',    'name': 'Right Bending',    'color': const Color(0xFF54C0C0)},
-  ];
-  
-  // Order for bottom legend as requested
-  final legendOrder = [
-    'upright',
-    'forward_bending', 
-    'backward_bending',
-    'slouching',
-    'left_bending',
-    'right_bending'
-  ];
+  //             // Legend — 2 column grid, each posture as a pill
+  //             GridView.builder(
+  //               shrinkWrap: true,
+  //               physics: const NeverScrollableScrollPhysics(),
+  //               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+  //                 crossAxisCount: 2,
+  //                 childAspectRatio: 3.8,
+  //                 crossAxisSpacing: 8,
+  //                 mainAxisSpacing: 8,
+  //               ),
+  //               itemCount: postureConfig.length,
+  //               itemBuilder: (context, index) {
+  //                 final p = postureConfig[index];
+  //                 final key = p['key'] as String;
+  //                 final pct = percentages[key] ?? 0;
+  //                 final count = counts[key] ?? 0;
+  //                 final color = p['color'] as Color;
+  //                 return Container(
+  //                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+  //                   decoration: BoxDecoration(
+  //                     color: color.withOpacity(0.08),
+  //                     borderRadius: BorderRadius.circular(10),
+  //                     border: Border.all(color: color.withOpacity(0.25)),
+  //                   ),
+  //                   child: Row(
+  //                     children: [
+  //                       Container(
+  //                         width: 10,
+  //                         height: 10,
+  //                         decoration: BoxDecoration(
+  //                           color: color,
+  //                           shape: BoxShape.circle,
+  //                         ),
+  //                       ),
+  //                       const SizedBox(width: 6),
+  //                       Expanded(
+  //                         child: Column(
+  //                           crossAxisAlignment: CrossAxisAlignment.start,
+  //                           mainAxisAlignment: MainAxisAlignment.center,
+  //                           children: [
+  //                             Text(
+  //                               p['name'] as String,
+  //                               style: const TextStyle(
+  //                                 fontSize: 10,
+  //                                 fontWeight: FontWeight.w600,
+  //                               ),
+  //                               overflow: TextOverflow.ellipsis,
+  //                             ),
+  //                             Text(
+  //                               '$count · ${pct.toStringAsFixed(1)}%',
+  //                               style: TextStyle(
+  //                                 fontSize: 10,
+  //                                 color: Colors.grey.shade500,
+  //                               ),
+  //                             ),
+  //                           ],
+  //                         ),
+  //                       ),
+  //                     ],
+  //                   ),
+  //                 );
+  //               },
+  //             ),
+  //           ],
+  //         ),
+  //       );
+  //     },
+  //   );
+  // }
+  Widget _buildPieChart(AnalyticsService service) {
+    final percentages = service.calculatePosturePercentages(_data);
+    final counts = service.calculatePostureCounts(_data);
 
-  final validPostures = postureConfig
-      .where((p) => (percentages[p['key'] as String] ?? 0) > 0)
-      .toList();
+    // Timer for auto-reset
+    Timer? resetTimer;
 
-  return StatefulBuilder(
-    builder: (context, setLocalState) {
-      return Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.06),
-              blurRadius: 20,
-              offset: const Offset(0, 4),
-            )
-          ],
-        ),
-        child: Column(
-          children: [
-            // ================= PIE CHART =================
-            SizedBox(
-              height: 200,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  PieChart(
-                    PieChartData(
-                      sectionsSpace: 3,
-                      centerSpaceRadius: 52,
-                      startDegreeOffset: -90,
-                      pieTouchData: PieTouchData(
-                        touchCallback: (event, response) {
-                          setLocalState(() {
-                            // Cancel any existing timer
-                            resetTimer?.cancel();
-                            
-                            // If nothing valid is touched → do nothing
-                            if (response == null ||
-                                response.touchedSection == null ||
-                                !event.isInterestedForInteractions) {
-                              return;
-                            }
+    final postureConfig = [
+      {'key': 'upright', 'name': 'Upright', 'color': const Color(0xFF5B8FF9)},
+      {
+        'key': 'forward_bending',
+        'name': 'Forward Bending',
+        'color': const Color(0xFF61DDAA),
+      },
+      {
+        'key': 'backward_bending',
+        'name': 'Backward Bending',
+        'color': const Color(0xFFFFB44C),
+      },
+      {
+        'key': 'slouching',
+        'name': 'Slouching',
+        'color': const Color(0xFFFF6B6B),
+      },
+      {
+        'key': 'left_bending',
+        'name': 'Left Bending',
+        'color': const Color(0xFFB37FEB),
+      },
+      {
+        'key': 'right_bending',
+        'name': 'Right Bending',
+        'color': const Color(0xFF54C0C0),
+      },
+    ];
 
-                            final index = response.touchedSection!.touchedSectionIndex;
-                            
-                            // Ignore invalid index
-                            if (index < 0 || index >= validPostures.length) {
-                              return;
-                            }
+    // Order for bottom legend as requested
+    final legendOrder = [
+      'upright',
+      'forward_bending',
+      'backward_bending',
+      'slouching',
+      'left_bending',
+      'right_bending',
+    ];
 
-                            // Set the touched index
-                            _touchedPieIndex = index;
-                            
-                            // Start timer to reset after 3 seconds
-                            resetTimer = Timer(const Duration(seconds: 3), () {
-                              if (mounted) {
-                                setLocalState(() {
-                                  _touchedPieIndex = null;
-                                });
-                              }
-                            });
-                          });
-                        },
-                      ),
-                      sections: validPostures.asMap().entries.map((entry) {
-                        final i = entry.key;
-                        final p = entry.value;
-                        final pct = percentages[p['key'] as String] ?? 0;
-                        final isTouched = _touchedPieIndex == i;
-                        
-                        return PieChartSectionData(
-                          color: p['color'] as Color,
-                          value: pct,
-                          title: '',
-                          radius: isTouched ? 58 : 48,
-                          badgeWidget: isTouched
-                              ? Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: p['color'] as Color,
-                                    borderRadius: BorderRadius.circular(8),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: (p['color'] as Color).withOpacity(0.4),
-                                        blurRadius: 8,
-                                      )
-                                    ],
-                                  ),
-                                  child: Text(
-                                    '${pct.toStringAsFixed(1)}%',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                )
-                              : null,
-                          badgePositionPercentageOffset: 1.3,
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                  
-                  // ================= CENTER TEXT =================
-                  (_touchedPieIndex != null && _touchedPieIndex! < validPostures.length)
-                      ? Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              '${(percentages[validPostures[_touchedPieIndex!]['key'] as String] ?? 0).toStringAsFixed(1)}%',
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: validPostures[_touchedPieIndex!]['color'] as Color,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              validPostures[_touchedPieIndex!]['name'] as String,
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: const Color.fromARGB(255, 0, 0, 0),
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              '${counts[validPostures[_touchedPieIndex!]['key'] as String] ?? 0} readings',
-                              style: TextStyle(
-                                fontSize: 9,
-                                color: const Color.fromARGB(255, 2, 2, 2),
-                              ),
-                            ),
-                          ],
-                        )
-                      : Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              '${service.calculatePostureScore(_data)}%',
-                              style: const TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF5B8FF9),
-                              ),
-                            ),
-                            Text(
-                              'Score',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.grey.shade500,
-                              ),
-                            ),
-                          ],
-                        ),
-                ],
+    final validPostures = postureConfig
+        .where((p) => (percentages[p['key'] as String] ?? 0) > 0)
+        .toList();
+
+    return StatefulBuilder(
+      builder: (context, setLocalState) {
+        return Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 20,
+                offset: const Offset(0, 4),
               ),
-            ),
-            
-            const SizedBox(height: 24),
-            const Divider(height: 1, color: Color(0xFFEEEEEE)),
-            const SizedBox(height: 16),
-            
-            // ================= LEGEND AT BOTTOM (3x2 GRID LAYOUT) =================
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3, // Three items per row
-                childAspectRatio: 2.5, // Adjust this to control height
-                crossAxisSpacing: 1,
-                mainAxisSpacing: 2,
-              ),
-              itemCount: legendOrder.length, // Always 6 items
-              itemBuilder: (context, index) {
-                final key = legendOrder[index];
-                final posture = postureConfig.firstWhere((p) => p['key'] == key);
-                final hasData = (percentages[key] ?? 0) > 0;
-                
-                return Row(
-                  mainAxisSize: MainAxisSize.min,
+            ],
+          ),
+          child: Column(
+            children: [
+              // ================= PIE CHART =================
+              SizedBox(
+                height: 200,
+                child: Stack(
+                  alignment: Alignment.center,
                   children: [
-                    Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                        color: hasData ? posture['color'] as Color : Colors.grey.shade300,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        posture['name'] as String,
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w500,
-                          color: hasData ? Colors.black87 : Colors.grey.shade400,
+                    PieChart(
+                      PieChartData(
+                        sectionsSpace: 3,
+                        centerSpaceRadius: 52,
+                        startDegreeOffset: -90,
+                        pieTouchData: PieTouchData(
+                          touchCallback: (event, response) {
+                            setLocalState(() {
+                              // Cancel any existing timer
+                              resetTimer?.cancel();
+
+                              // If nothing valid is touched → do nothing
+                              if (response == null ||
+                                  response.touchedSection == null ||
+                                  !event.isInterestedForInteractions) {
+                                return;
+                              }
+
+                              final index =
+                                  response.touchedSection!.touchedSectionIndex;
+
+                              // Ignore invalid index
+                              if (index < 0 || index >= validPostures.length) {
+                                return;
+                              }
+
+                              // Set the touched index
+                              _touchedPieIndex = index;
+
+                              // Start timer to reset after 3 seconds
+                              resetTimer = Timer(
+                                const Duration(seconds: 3),
+                                () {
+                                  if (mounted) {
+                                    setLocalState(() {
+                                      _touchedPieIndex = null;
+                                    });
+                                  }
+                                },
+                              );
+                            });
+                          },
                         ),
-                        overflow: TextOverflow.ellipsis,
+                        sections: validPostures.asMap().entries.map((entry) {
+                          final i = entry.key;
+                          final p = entry.value;
+                          final pct = percentages[p['key'] as String] ?? 0;
+                          final isTouched = _touchedPieIndex == i;
+
+                          return PieChartSectionData(
+                            color: p['color'] as Color,
+                            value: pct,
+                            title: '',
+                            radius: isTouched ? 58 : 48,
+                            badgeWidget: isTouched
+                                ? Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: p['color'] as Color,
+                                      borderRadius: BorderRadius.circular(8),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: (p['color'] as Color)
+                                              .withOpacity(0.4),
+                                          blurRadius: 8,
+                                        ),
+                                      ],
+                                    ),
+                                    child: Text(
+                                      '${pct.toStringAsFixed(1)}%',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  )
+                                : null,
+                            badgePositionPercentageOffset: 1.3,
+                          );
+                        }).toList(),
                       ),
                     ),
+
+                    // ================= CENTER TEXT =================
+                    (_touchedPieIndex != null &&
+                            _touchedPieIndex! < validPostures.length)
+                        ? Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '${(percentages[validPostures[_touchedPieIndex!]['key'] as String] ?? 0).toStringAsFixed(1)}%',
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color:
+                                      validPostures[_touchedPieIndex!]['color']
+                                          as Color,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                validPostures[_touchedPieIndex!]['name']
+                                    as String,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: const Color.fromARGB(255, 0, 0, 0),
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '${counts[validPostures[_touchedPieIndex!]['key'] as String] ?? 0} readings',
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  color: const Color.fromARGB(255, 2, 2, 2),
+                                ),
+                              ),
+                            ],
+                          )
+                        : Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '${service.calculatePostureScore(_data)}%',
+                                style: const TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF5B8FF9),
+                                ),
+                              ),
+                              Text(
+                                'Score',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey.shade500,
+                                ),
+                              ),
+                            ],
+                          ),
                   ],
-                );
-              },
-            ),
-          ],
-        ),
-      );
-    },
-  );
-}
+                ),
+              ),
+
+              const SizedBox(height: 24),
+              const Divider(height: 1, color: Color(0xFFEEEEEE)),
+              const SizedBox(height: 16),
+
+              // ================= LEGEND AT BOTTOM (3x2 GRID LAYOUT) =================
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3, // Three items per row
+                  childAspectRatio: 2.5, // Adjust this to control height
+                  crossAxisSpacing: 1,
+                  mainAxisSpacing: 2,
+                ),
+                itemCount: legendOrder.length, // Always 6 items
+                itemBuilder: (context, index) {
+                  final key = legendOrder[index];
+                  final posture = postureConfig.firstWhere(
+                    (p) => p['key'] == key,
+                  );
+                  final hasData = (percentages[key] ?? 0) > 0;
+
+                  return Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          color: hasData
+                              ? posture['color'] as Color
+                              : Colors.grey.shade300,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          posture['name'] as String,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w500,
+                            color: hasData
+                                ? Colors.black87
+                                : Colors.grey.shade400,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 
   Widget _buildLineChart(AnalyticsService service) {
     // Pick correct trend based on selected time range
@@ -847,10 +887,9 @@ Widget _buildPieChart(AnalyticsService service) {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(20),
-          boxShadow: [BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 15,
-          )],
+          boxShadow: [
+            BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 15),
+          ],
         ),
         child: Center(
           child: Column(
@@ -874,10 +913,9 @@ Widget _buildPieChart(AnalyticsService service) {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(
-          color: Colors.black.withOpacity(0.04),
-          blurRadius: 15,
-        )],
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 15),
+        ],
       ),
       child: LineChart(
         LineChartData(
@@ -889,9 +927,11 @@ Widget _buildPieChart(AnalyticsService service) {
           ),
           titlesData: FlTitlesData(
             rightTitles: const AxisTitles(
-                sideTitles: SideTitles(showTitles: false)),
+              sideTitles: SideTitles(showTitles: false),
+            ),
             topTitles: const AxisTitles(
-                sideTitles: SideTitles(showTitles: false)),
+              sideTitles: SideTitles(showTitles: false),
+            ),
             bottomTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
@@ -910,7 +950,9 @@ Widget _buildPieChart(AnalyticsService service) {
                     child: Text(
                       validTrend[index]['label'],
                       style: TextStyle(
-                          color: Colors.grey.shade500, fontSize: 10),
+                        color: Colors.grey.shade500,
+                        fontSize: 10,
+                      ),
                     ),
                   );
                 },
@@ -923,8 +965,7 @@ Widget _buildPieChart(AnalyticsService service) {
                 interval: 25,
                 getTitlesWidget: (value, meta) => Text(
                   '${value.toInt()}%',
-                  style: TextStyle(
-                      color: Colors.grey.shade500, fontSize: 10),
+                  style: TextStyle(color: Colors.grey.shade500, fontSize: 10),
                 ),
               ),
             ),
@@ -934,10 +975,15 @@ Widget _buildPieChart(AnalyticsService service) {
           maxY: 100,
           lineBarsData: [
             LineChartBarData(
-              spots: validTrend.asMap().entries
-                  .map((e) => FlSpot(
+              spots: validTrend
+                  .asMap()
+                  .entries
+                  .map(
+                    (e) => FlSpot(
                       e.key.toDouble(),
-                      (e.value['score'] as int).toDouble()))
+                      (e.value['score'] as int).toDouble(),
+                    ),
+                  )
                   .toList(),
               isCurved: true,
               curveSmoothness: 0.4,
@@ -948,11 +994,11 @@ Widget _buildPieChart(AnalyticsService service) {
                 show: true,
                 getDotPainter: (spot, percent, bar, index) =>
                     FlDotCirclePainter(
-                  radius: 4,
-                  color: Colors.white,
-                  strokeWidth: 2.5,
-                  strokeColor: const Color(0xFF5B8FF9),
-                ),
+                      radius: 4,
+                      color: Colors.white,
+                      strokeWidth: 2.5,
+                      strokeColor: const Color(0xFF5B8FF9),
+                    ),
               ),
               belowBarData: BarAreaData(
                 show: true,
@@ -995,7 +1041,11 @@ Widget _buildPieChart(AnalyticsService service) {
               color: const Color(0xFFEF4444).withOpacity(0.1),
               borderRadius: BorderRadius.circular(16),
             ),
-            child: const Icon(Icons.priority_high_rounded, color: Color(0xFFEF4444), size: 28),
+            child: const Icon(
+              Icons.priority_high_rounded,
+              color: Color(0xFFEF4444),
+              size: 28,
+            ),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -1023,7 +1073,10 @@ Widget _buildPieChart(AnalyticsService service) {
                 const SizedBox(height: 4),
                 Text(
                   'Improve your score by correcting this posture',
-                  style: TextStyle(color: const Color(0xFF7F1D1D).withOpacity(0.8), fontSize: 12),
+                  style: TextStyle(
+                    color: const Color(0xFF7F1D1D).withOpacity(0.8),
+                    fontSize: 12,
+                  ),
                 ),
               ],
             ),
@@ -1033,15 +1086,12 @@ Widget _buildPieChart(AnalyticsService service) {
     );
   }
 
-
   Future<void> _generatePDF(AnalyticsService service) async {
     // Show loading indicator
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(),
-      ),
+      builder: (context) => const Center(child: CircularProgressIndicator()),
     );
 
     try {
@@ -1072,16 +1122,16 @@ Widget _buildPieChart(AnalyticsService service) {
       final timeRangeLabel = _selectedTimeRange == 0
           ? 'Today'
           : _selectedTimeRange == 1
-              ? 'Last 7 Days'
-              : 'Last 30 Days';
+          ? 'Last 7 Days'
+          : 'Last 30 Days';
 
       final postureConfig = [
-        {'key': 'upright',          'name': 'Upright'},
-        {'key': 'forward_bending',  'name': 'Forward Bending'},
+        {'key': 'upright', 'name': 'Upright'},
+        {'key': 'forward_bending', 'name': 'Forward Bending'},
         {'key': 'backward_bending', 'name': 'Backward Bending'},
-        {'key': 'slouching',        'name': 'Slouching'},
-        {'key': 'left_bending',     'name': 'Left Bending'},
-        {'key': 'right_bending',    'name': 'Right Bending'},
+        {'key': 'slouching', 'name': 'Slouching'},
+        {'key': 'left_bending', 'name': 'Left Bending'},
+        {'key': 'right_bending', 'name': 'Right Bending'},
       ];
 
       // ── Build PDF ───────────────────────────────────────────
@@ -1092,7 +1142,6 @@ Widget _buildPieChart(AnalyticsService service) {
           pageFormat: PdfPageFormat.a4,
           margin: const pw.EdgeInsets.all(40),
           build: (pw.Context context) => [
-
             // Header
             pw.Container(
               padding: const pw.EdgeInsets.all(20),
@@ -1106,28 +1155,42 @@ Widget _buildPieChart(AnalyticsService service) {
                   pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.start,
                     children: [
-                      pw.Text('Smart Posture',
-                          style: pw.TextStyle(
-                              color: PdfColors.white,
-                              fontSize: 22,
-                              fontWeight: pw.FontWeight.bold)),
+                      pw.Text(
+                        'Smart Posture',
+                        style: pw.TextStyle(
+                          color: PdfColors.white,
+                          fontSize: 22,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
                       pw.SizedBox(height: 4),
-                      pw.Text('Posture Analysis Report',
-                          style: const pw.TextStyle(
-                              color: PdfColors.white, fontSize: 13)),
+                      pw.Text(
+                        'Posture Analysis Report',
+                        style: const pw.TextStyle(
+                          color: PdfColors.white,
+                          fontSize: 13,
+                        ),
+                      ),
                     ],
                   ),
                   pw.Column(
                     crossAxisAlignment: pw.CrossAxisAlignment.end,
                     children: [
                       pw.Text(
-                          'Generated: ${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year}',
-                          style: const pw.TextStyle(
-                              color: PdfColors.white, fontSize: 11)),
+                        'Generated: ${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year}',
+                        style: const pw.TextStyle(
+                          color: PdfColors.white,
+                          fontSize: 11,
+                        ),
+                      ),
                       pw.SizedBox(height: 4),
-                      pw.Text('Period: $timeRangeLabel',
-                          style: const pw.TextStyle(
-                              color: PdfColors.white, fontSize: 11)),
+                      pw.Text(
+                        'Period: $timeRangeLabel',
+                        style: const pw.TextStyle(
+                          color: PdfColors.white,
+                          fontSize: 11,
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -1137,43 +1200,59 @@ Widget _buildPieChart(AnalyticsService service) {
             pw.SizedBox(height: 24),
 
             // Patient info
-            pw.Text('Patient Information',
-                style: pw.TextStyle(
-                    fontSize: 16, fontWeight: pw.FontWeight.bold)),
+            pw.Text(
+              'Patient Information',
+              style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
+            ),
             pw.SizedBox(height: 12),
             pw.Container(
               padding: const pw.EdgeInsets.all(16),
               decoration: pw.BoxDecoration(
                 border: pw.Border.all(color: PdfColors.grey300),
-                borderRadius:
-                    const pw.BorderRadius.all(pw.Radius.circular(8)),
+                borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
               ),
               child: pw.Table(
                 children: [
-                  pw.TableRow(children: [
-                    pw.Text('Full Name',
+                  pw.TableRow(
+                    children: [
+                      pw.Text(
+                        'Full Name',
                         style: pw.TextStyle(
-                            fontWeight: pw.FontWeight.bold,
-                            color: PdfColors.grey700)),
-                    pw.Text(patient['fullName'] ?? 'N/A'),
-                    pw.Text('Gender',
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.grey700,
+                        ),
+                      ),
+                      pw.Text(patient['fullName'] ?? 'N/A'),
+                      pw.Text(
+                        'Gender',
                         style: pw.TextStyle(
-                            fontWeight: pw.FontWeight.bold,
-                            color: PdfColors.grey700)),
-                    pw.Text(patient['gender'] ?? 'N/A'),
-                  ]),
-                  pw.TableRow(children: [
-                    pw.Text('Date of Birth',
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.grey700,
+                        ),
+                      ),
+                      pw.Text(patient['gender'] ?? 'N/A'),
+                    ],
+                  ),
+                  pw.TableRow(
+                    children: [
+                      pw.Text(
+                        'Date of Birth',
                         style: pw.TextStyle(
-                            fontWeight: pw.FontWeight.bold,
-                            color: PdfColors.grey700)),
-                    pw.Text(patient['dateOfBirth'] ?? 'N/A'),
-                    pw.Text('Email',
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.grey700,
+                        ),
+                      ),
+                      pw.Text(patient['dateOfBirth'] ?? 'N/A'),
+                      pw.Text(
+                        'Email',
                         style: pw.TextStyle(
-                            fontWeight: pw.FontWeight.bold,
-                            color: PdfColors.grey700)),
-                    pw.Text(patient['contactEmail'] ?? 'N/A'),
-                  ]),
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.grey700,
+                        ),
+                      ),
+                      pw.Text(patient['contactEmail'] ?? 'N/A'),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -1181,9 +1260,10 @@ Widget _buildPieChart(AnalyticsService service) {
             pw.SizedBox(height: 24),
 
             // Score summary
-            pw.Text('Posture Score Summary',
-                style: pw.TextStyle(
-                    fontSize: 16, fontWeight: pw.FontWeight.bold)),
+            pw.Text(
+              'Posture Score Summary',
+              style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
+            ),
             pw.SizedBox(height: 12),
             pw.Row(
               children: [
@@ -1195,14 +1275,14 @@ Widget _buildPieChart(AnalyticsService service) {
                     color: score >= 70
                         ? PdfColors.green100
                         : score >= 40
-                            ? PdfColors.orange100
-                            : PdfColors.red100,
+                        ? PdfColors.orange100
+                        : PdfColors.red100,
                     border: pw.Border.all(
                       color: score >= 70
                           ? PdfColors.green800
                           : score >= 40
-                              ? PdfColors.orange800
-                              : PdfColors.red800,
+                          ? PdfColors.orange800
+                          : PdfColors.red800,
                       width: 3,
                     ),
                   ),
@@ -1210,19 +1290,25 @@ Widget _buildPieChart(AnalyticsService service) {
                   child: pw.Column(
                     mainAxisAlignment: pw.MainAxisAlignment.center,
                     children: [
-                      pw.Text('$score%',
-                          style: pw.TextStyle(
-                            fontSize: 24,
-                            fontWeight: pw.FontWeight.bold,
-                            color: score >= 70
-                                ? PdfColors.green800
-                                : score >= 40
-                                    ? PdfColors.orange800
-                                    : PdfColors.red800,
-                          )),
-                      pw.Text('Score',
-                          style: const pw.TextStyle(
-                              fontSize: 11, color: PdfColors.grey700)),
+                      pw.Text(
+                        '$score%',
+                        style: pw.TextStyle(
+                          fontSize: 24,
+                          fontWeight: pw.FontWeight.bold,
+                          color: score >= 70
+                              ? PdfColors.green800
+                              : score >= 40
+                              ? PdfColors.orange800
+                              : PdfColors.red800,
+                        ),
+                      ),
+                      pw.Text(
+                        'Score',
+                        style: const pw.TextStyle(
+                          fontSize: 11,
+                          color: PdfColors.grey700,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -1235,20 +1321,29 @@ Widget _buildPieChart(AnalyticsService service) {
                         score >= 70
                             ? 'Good posture habits detected.'
                             : score >= 40
-                                ? 'Moderate posture issues detected.'
-                                : 'Poor posture habits detected.',
+                            ? 'Moderate posture issues detected.'
+                            : 'Poor posture habits detected.',
                         style: pw.TextStyle(
-                            fontSize: 13, fontWeight: pw.FontWeight.bold),
+                          fontSize: 13,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
                       ),
                       pw.SizedBox(height: 6),
-                      pw.Text('Total readings analyzed: ${_data.length}',
-                          style: const pw.TextStyle(
-                              fontSize: 12, color: PdfColors.grey700)),
+                      pw.Text(
+                        'Total readings analyzed: ${_data.length}',
+                        style: const pw.TextStyle(
+                          fontSize: 12,
+                          color: PdfColors.grey700,
+                        ),
+                      ),
                       pw.SizedBox(height: 4),
                       pw.Text(
-                          'Most problematic posture: ${problematic == 'none' ? 'None' : problematic.replaceAll('_', ' ')}',
-                          style: const pw.TextStyle(
-                              fontSize: 12, color: PdfColors.grey700)),
+                        'Most problematic posture: ${problematic == 'none' ? 'None' : problematic.replaceAll('_', ' ')}',
+                        style: const pw.TextStyle(
+                          fontSize: 12,
+                          color: PdfColors.grey700,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -1258,9 +1353,10 @@ Widget _buildPieChart(AnalyticsService service) {
             pw.SizedBox(height: 24),
 
             // Posture breakdown table
-            pw.Text('Posture Breakdown',
-                style: pw.TextStyle(
-                    fontSize: 16, fontWeight: pw.FontWeight.bold)),
+            pw.Text(
+              'Posture Breakdown',
+              style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
+            ),
             pw.SizedBox(height: 12),
             pw.Table(
               border: pw.TableBorder.all(color: PdfColors.grey300),
@@ -1272,33 +1368,48 @@ Widget _buildPieChart(AnalyticsService service) {
               },
               children: [
                 pw.TableRow(
-                  decoration:
-                      const pw.BoxDecoration(color: PdfColors.blue800),
+                  decoration: const pw.BoxDecoration(color: PdfColors.blue800),
                   children: [
                     pw.Padding(
-                        padding: const pw.EdgeInsets.all(8),
-                        child: pw.Text('Posture',
-                            style: pw.TextStyle(
-                                color: PdfColors.white,
-                                fontWeight: pw.FontWeight.bold))),
+                      padding: const pw.EdgeInsets.all(8),
+                      child: pw.Text(
+                        'Posture',
+                        style: pw.TextStyle(
+                          color: PdfColors.white,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
+                    ),
                     pw.Padding(
-                        padding: const pw.EdgeInsets.all(8),
-                        child: pw.Text('Readings',
-                            style: pw.TextStyle(
-                                color: PdfColors.white,
-                                fontWeight: pw.FontWeight.bold))),
+                      padding: const pw.EdgeInsets.all(8),
+                      child: pw.Text(
+                        'Readings',
+                        style: pw.TextStyle(
+                          color: PdfColors.white,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
+                    ),
                     pw.Padding(
-                        padding: const pw.EdgeInsets.all(8),
-                        child: pw.Text('Percentage',
-                            style: pw.TextStyle(
-                                color: PdfColors.white,
-                                fontWeight: pw.FontWeight.bold))),
+                      padding: const pw.EdgeInsets.all(8),
+                      child: pw.Text(
+                        'Percentage',
+                        style: pw.TextStyle(
+                          color: PdfColors.white,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
+                    ),
                     pw.Padding(
-                        padding: const pw.EdgeInsets.all(8),
-                        child: pw.Text('Status',
-                            style: pw.TextStyle(
-                                color: PdfColors.white,
-                                fontWeight: pw.FontWeight.bold))),
+                      padding: const pw.EdgeInsets.all(8),
+                      child: pw.Text(
+                        'Status',
+                        style: pw.TextStyle(
+                          color: PdfColors.white,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
                 ...postureConfig.map((p) {
@@ -1308,17 +1419,21 @@ Widget _buildPieChart(AnalyticsService service) {
                   final isGood = key == 'upright';
                   return pw.TableRow(
                     decoration: pw.BoxDecoration(
-                        color: isGood ? PdfColors.green50 : PdfColors.white),
+                      color: isGood ? PdfColors.green50 : PdfColors.white,
+                    ),
                     children: [
                       pw.Padding(
-                          padding: const pw.EdgeInsets.all(8),
-                          child: pw.Text(p['name']!)),
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text(p['name']!),
+                      ),
                       pw.Padding(
-                          padding: const pw.EdgeInsets.all(8),
-                          child: pw.Text('$count')),
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text('$count'),
+                      ),
                       pw.Padding(
-                          padding: const pw.EdgeInsets.all(8),
-                          child: pw.Text('${pct.toStringAsFixed(1)}%')),
+                        padding: const pw.EdgeInsets.all(8),
+                        child: pw.Text('${pct.toStringAsFixed(1)}%'),
+                      ),
                       pw.Padding(
                         padding: const pw.EdgeInsets.all(8),
                         child: pw.Text(
@@ -1343,12 +1458,20 @@ Widget _buildPieChart(AnalyticsService service) {
             pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
-                pw.Text('Smart Posture App — Confidential Medical Report',
-                    style: const pw.TextStyle(
-                        fontSize: 10, color: PdfColors.grey600)),
-                pw.Text('Page 1',
-                    style: const pw.TextStyle(
-                        fontSize: 10, color: PdfColors.grey600)),
+                pw.Text(
+                  'Smart Posture App — Confidential Medical Report',
+                  style: const pw.TextStyle(
+                    fontSize: 10,
+                    color: PdfColors.grey600,
+                  ),
+                ),
+                pw.Text(
+                  'Page 1',
+                  style: const pw.TextStyle(
+                    fontSize: 10,
+                    color: PdfColors.grey600,
+                  ),
+                ),
               ],
             ),
           ],
@@ -1358,59 +1481,63 @@ Widget _buildPieChart(AnalyticsService service) {
       // ── Save PDF bytes ───────────────────────────────────────
       final pdfBytes = await pdf.save();
 
-  // ── Save PDF to laptop/device downloads ─────────────────
-  final directory = await getApplicationDocumentsDirectory();
-  final fileName = 'posture_report_${DateTime.now().day}_${DateTime.now().month}_${DateTime.now().year}.pdf';
-  final file = File('${directory.path}/$fileName');
-  await file.writeAsBytes(pdfBytes);
-  print('✅ PDF saved at: ${file.path}');
+      // ── Save PDF to laptop/device downloads ─────────────────
+      final directory = await getApplicationDocumentsDirectory();
+      final fileName =
+          'posture_report_${DateTime.now().day}_${DateTime.now().month}_${DateTime.now().year}.pdf';
+      final file = File('${directory.path}/$fileName');
+      await file.writeAsBytes(pdfBytes);
+      print('✅ PDF saved at: ${file.path}');
       // ── Upload to Firebase Storage ───────────────────────────
-  // ── Convert PDF to base64 string ────────────────────────
-  final pdfBase64 = base64Encode(pdfBytes);
+      // ── Convert PDF to base64 string ────────────────────────
+      final pdfBase64 = base64Encode(pdfBytes);
 
-  // ── Save to Firestore directly (no Storage needed) ──────
-  final reportId = 'report_${DateTime.now().millisecondsSinceEpoch}';
+      // ── Save to Firestore directly (no Storage needed) ──────
+      final reportId = 'report_${DateTime.now().millisecondsSinceEpoch}';
 
-  await FirebaseFirestore.instance.collection('reports').doc(reportId).set({
-    'reportId': reportId,
-    'patientId': patientDoc.id,
-    'generatedAt': DateTime.now().toIso8601String(),
-    'reportType': _selectedTimeRange == 0
-        ? 'daily'
-        : _selectedTimeRange == 1
+      await FirebaseFirestore.instance.collection('reports').doc(reportId).set({
+        'reportId': reportId,
+        'patientId': patientDoc.id,
+        'generatedAt': DateTime.now().toIso8601String(),
+        'reportType': _selectedTimeRange == 0
+            ? 'daily'
+            : _selectedTimeRange == 1
             ? 'weekly'
             : 'monthly',
-    'exportFormat': 'PDF',
-    'postureScore': score,
-    'totalReadings': _data.length,
-    'mostProblematicPosture': problematic,
-    'uprightPercent': percentages['upright']?.toStringAsFixed(1) ?? '0',
-    'forwardBendingPercent': percentages['forward_bending']?.toStringAsFixed(1) ?? '0',
-    'backwardBendingPercent': percentages['backward_bending']?.toStringAsFixed(1) ?? '0',
-    'slouchingPercent': percentages['slouching']?.toStringAsFixed(1) ?? '0',
-    'leftBendingPercent': percentages['left_bending']?.toStringAsFixed(1) ?? '0',
-    'rightBendingPercent': percentages['right_bending']?.toStringAsFixed(1) ?? '0',
-    'pdfBase64': pdfBase64,   // ← PDF stored as base64 string
-    'period': timeRangeLabel,
-  });
+        'exportFormat': 'PDF',
+        'postureScore': score,
+        'totalReadings': _data.length,
+        'mostProblematicPosture': problematic,
+        'uprightPercent': percentages['upright']?.toStringAsFixed(1) ?? '0',
+        'forwardBendingPercent':
+            percentages['forward_bending']?.toStringAsFixed(1) ?? '0',
+        'backwardBendingPercent':
+            percentages['backward_bending']?.toStringAsFixed(1) ?? '0',
+        'slouchingPercent': percentages['slouching']?.toStringAsFixed(1) ?? '0',
+        'leftBendingPercent':
+            percentages['left_bending']?.toStringAsFixed(1) ?? '0',
+        'rightBendingPercent':
+            percentages['right_bending']?.toStringAsFixed(1) ?? '0',
+        'pdfBase64': pdfBase64, // ← PDF stored as base64 string
+        'period': timeRangeLabel,
+      });
 
-  // ── Close loading dialog ─────────────────────────────────
-  if (mounted) Navigator.of(context).pop();
+      // ── Close loading dialog ─────────────────────────────────
+      if (mounted) Navigator.of(context).pop();
 
-  // ── Show PDF preview to user ─────────────────────────────
-  await Printing.layoutPdf(onLayout: (format) async => pdfBytes);
+      // ── Show PDF preview to user ─────────────────────────────
+      await Printing.layoutPdf(onLayout: (format) async => pdfBytes);
 
-  // ── Show success snackbar ────────────────────────────────
-  if (mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('✅ Report saved to database successfully!'),
-        backgroundColor: Colors.green,
-        duration: Duration(seconds: 3),
-      ),
-    );
-  }
-
+      // ── Show success snackbar ────────────────────────────────
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Report saved to database successfully!'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
     } catch (e) {
       // Close loading dialog on error
       if (mounted) Navigator.of(context).pop();
