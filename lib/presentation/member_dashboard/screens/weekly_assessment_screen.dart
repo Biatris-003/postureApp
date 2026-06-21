@@ -19,18 +19,27 @@ class WeeklyAssessmentScreen extends ConsumerWidget {
     final currentUser = ref.watch(authStateProvider);
     final String userId = currentUser?.userId ?? 'unknown';
 
+    // ─── Posture-based recommendations from this week's statistics ──────
     final postureCountMap = postureCountsCache;
     final recommendationService = ref.watch(exerciseRecommendationServiceProvider);
     final recommendedExercises =
         recommendationService.getRecommendedExercisesFromCounts(postureCountMap);
 
+    // ─── Assigned plan (the user's default exercise list). Falls back to
+    // the full ExerciseData.catalog if this user has no custom override. ──
     final mappedExercises = ref.watch(exerciseProvider);
-    final defaultExercises = mappedExercises[userId] ?? [];
+    final defaultExercises = effectivePlanFor(mappedExercises, userId);
 
     // ─── Read progress for display ──────────────────────────────
     final progress = ref.watch(exerciseProgressNotifierProvider);
 
-    final List<Exercise> exercises = defaultExercises;
+    // ─── Always include the 4 tracked exercises, regardless of posture,
+    // then layer posture-recommended exercises on top, deduplicated. ─────
+    final List<Exercise> exercises = _buildWeeklyList(
+      tracked: trackedExerciseTitles,
+      assigned: defaultExercises,
+      recommended: recommendedExercises,
+    );
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -69,7 +78,7 @@ class WeeklyAssessmentScreen extends ConsumerWidget {
                           Padding(
                             padding: const EdgeInsets.only(top: 8.0),
                             child: Text(
-                              'Based on your posture patterns',
+                              'Includes extra exercises based on your posture patterns this week',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Theme.of(context)
@@ -102,6 +111,52 @@ class WeeklyAssessmentScreen extends ConsumerWidget {
               ],
             ),
     );
+  }
+
+  /// Builds the Weekly Assessment exercise list:
+  ///   1. The 4 always-tracked exercises (Circumduction, Squatting,
+  ///      Side Bending Right, Sit-to-stand) — always present, no matter
+  ///      what postures the patient sat in this week.
+  ///   2. Posture-recommended exercises for the week's worst postures,
+  ///      appended after, skipping anything already in the tracked set.
+  ///
+  /// Tracked exercises are pulled from [assigned] by exact title match
+  /// (so they keep their real id/progress link). If a tracked title is
+  /// somehow missing from the assigned plan, it's skipped rather than
+  /// fabricated, since we don't have a safe id/image/video for it here.
+  List<Exercise> _buildWeeklyList({
+    required List<String> tracked,
+    required List<Exercise> assigned,
+    required List<Exercise> recommended,
+  }) {
+    final assignedByTitle = <String, Exercise>{
+      for (final e in assigned) e.title.toLowerCase().trim(): e,
+    };
+
+    final result = <Exercise>[];
+    final seen = <String>{};
+
+    // 1) Always-shown 4, in the fixed order given by exercise_constants.dart.
+    for (final title in tracked) {
+      final key = title.toLowerCase().trim();
+      final match = assignedByTitle[key];
+      if (match == null) continue; // not found in plan — skip, don't fabricate
+      if (seen.contains(key)) continue;
+      seen.add(key);
+      result.add(match);
+    }
+
+    // 2) Posture-recommended exercises on top, deduped against the 4 above
+    // and against each other. Prefer the assigned-plan version if it
+    // exists (keeps stable id/progress), else use the recommended model.
+    for (final rec in recommended) {
+      final key = rec.title.toLowerCase().trim();
+      if (seen.contains(key)) continue;
+      seen.add(key);
+      result.add(assignedByTitle[key] ?? rec);
+    }
+
+    return result;
   }
 
   Color _difficultyColor(String level) {
@@ -189,22 +244,47 @@ class WeeklyAssessmentScreen extends ConsumerWidget {
               Positioned(
                 top: 16,
                 right: 16,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: diffColor.withValues(alpha: 0.85),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    exercise.difficultyLevel,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.3,
+                child: Row(
+                  children: [
+                    if (!isTracked)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF6C63FF).withValues(alpha: 0.85),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: const Text(
+                            'For You',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.3,
+                            ),
+                          ),
+                        ),
+                      ),
+                    Container(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: diffColor.withValues(alpha: 0.85),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        exercise.difficultyLevel,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
                     ),
-                  ),
+                  ],
                 ),
               ),
               Padding(

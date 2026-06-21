@@ -19,19 +19,28 @@ class ExercisesTab extends ConsumerWidget {
     final currentUser = ref.watch(authStateProvider);
     final String userId = currentUser?.userId ?? 'unknown';
 
+    // ─── Posture-based recommendations from this week's statistics ──────
     final postureCountMap = postureCountsCache;
     final recommendationService =
         ref.watch(exerciseRecommendationServiceProvider);
     final recommendedExercises =
         recommendationService.getRecommendedExercisesFromCounts(postureCountMap);
 
+    // ─── Assigned plan (the user's default exercise list). Falls back to
+    // the full ExerciseData.catalog if this user has no custom override. ──
     final mappedExercises = ref.watch(exerciseProvider);
-    final defaultExercises = mappedExercises[userId] ?? [];
+    final defaultExercises = effectivePlanFor(mappedExercises, userId);
 
     // ─── Read progress for display ──────────────────────────────
     final progress = ref.watch(exerciseProgressNotifierProvider);
 
-    final List<Exercise> exercises = defaultExercises;
+    // ─── Merge: recommended exercises first, then the assigned plan,
+    // deduplicated by title (case-insensitive) so nothing shows twice. ───
+    final List<Exercise> exercises = _mergeExercises(
+      recommended: recommendedExercises,
+      assigned: defaultExercises,
+    );
+
     if (exercises.isEmpty) {
       return Center(
         child: Text(
@@ -46,6 +55,12 @@ class ExercisesTab extends ConsumerWidget {
         ),
       );
     }
+
+    // Titles that came from posture recommendations, so we can badge them
+    // in the list (and so the caption only refers to those cards).
+    final recommendedTitles = recommendedExercises
+        .map((e) => e.title.toLowerCase().trim())
+        .toSet();
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -91,11 +106,11 @@ class ExercisesTab extends ConsumerWidget {
                       ),
                     ],
                   ),
-                  if (recommendedExercises.isNotEmpty)
+                  if (recommendedTitles.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 8.0),
                       child: Text(
-                        'Based on your posture patterns',
+                        'Highlighted exercises are based on your posture patterns this week',
                         style: TextStyle(
                           fontSize: 12,
                           color: Theme.of(context)
@@ -116,9 +131,16 @@ class ExercisesTab extends ConsumerWidget {
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
                   final exercise = exercises[index];
+                  final isRecommended = recommendedTitles
+                      .contains(exercise.title.toLowerCase().trim());
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 24),
-                    child: _buildExerciseCard(context, exercise, progress),
+                    child: _buildExerciseCard(
+                      context,
+                      exercise,
+                      progress,
+                      isRecommended: isRecommended,
+                    ),
                   );
                 },
                 childCount: exercises.length,
@@ -128,6 +150,41 @@ class ExercisesTab extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  /// Combines posture-recommended exercises with the user's assigned plan.
+  /// Recommended exercises are listed first (most relevant to this week),
+  /// followed by the rest of the assigned plan. Duplicate titles (case
+  /// insensitive, trimmed) are kept only once — the assigned-plan version
+  /// wins if both exist, since it carries the user's real progress/id.
+  List<Exercise> _mergeExercises({
+    required List<Exercise> recommended,
+    required List<Exercise> assigned,
+  }) {
+    final assignedByTitle = <String, Exercise>{
+      for (final e in assigned) e.title.toLowerCase().trim(): e,
+    };
+
+    final merged = <Exercise>[];
+    final seen = <String>{};
+
+    // Recommended first — prefer the assigned-plan version if the same
+    // exercise already exists there (keeps a stable id/progress link).
+    for (final rec in recommended) {
+      final key = rec.title.toLowerCase().trim();
+      if (seen.contains(key)) continue;
+      seen.add(key);
+      merged.add(assignedByTitle[key] ?? rec);
+    }
+
+    // Then the rest of the assigned plan.
+    for (final entry in assignedByTitle.entries) {
+      if (seen.contains(entry.key)) continue;
+      seen.add(entry.key);
+      merged.add(entry.value);
+    }
+
+    return merged;
   }
 
   Color _difficultyColor(String level) {
@@ -142,12 +199,16 @@ class ExercisesTab extends ConsumerWidget {
   }
 
   Widget _buildExerciseCard(
-      BuildContext context, Exercise exercise, Map<String, int> progress) {
+    BuildContext context,
+    Exercise exercise,
+    Map<String, int> progress, {
+    bool isRecommended = false,
+  }) {
     final diffColor = _difficultyColor(exercise.difficultyLevel);
 
     // Determine if this exercise is one of the 4 tracked
     final isTracked = trackedExerciseTitles.contains(exercise.title);
-    
+
     // Get completed reps from weekly assessment
     String repsDisplay = '10 Reps × 3 Sets';
     if (isTracked) {
@@ -230,10 +291,23 @@ class ExercisesTab extends ConsumerWidget {
               Positioned(
                 top: 16,
                 right: 16,
-                child: _buildTopPill(
-                  icon: Icons.bar_chart_rounded,
-                  label: exercise.difficultyLevel,
-                  color: diffColor,
+                child: Row(
+                  children: [
+                    if (isRecommended)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: _buildTopPill(
+                          icon: Icons.auto_graph_rounded,
+                          label: 'For You',
+                          color: const Color(0xFF6C63FF),
+                        ),
+                      ),
+                    _buildTopPill(
+                      icon: Icons.bar_chart_rounded,
+                      label: exercise.difficultyLevel,
+                      color: diffColor,
+                    ),
+                  ],
                 ),
               ),
               Padding(

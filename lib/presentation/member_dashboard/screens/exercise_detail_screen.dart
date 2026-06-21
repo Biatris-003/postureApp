@@ -189,7 +189,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     'Plank': 20,
     'Right Side Leg Raise': 4,
     'Side Bending Right': 20,
-    'Sit to Stand': 4,
+    'Sit-to-Stand': 4,
     'Squatting': 4,
     'Thoracic Back Extension': 7,
     'Tummy Twist': 4,
