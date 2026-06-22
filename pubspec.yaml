@@ -43,7 +43,8 @@ dependencies:
   pdf: ^3.11.3
   printing: ^5.14.2
   shared_preferences: ^2.5.4
-  google_fonts: ^8.0.2
+  # google_fonts: ^8.0.2
+  google_fonts: ^6.2.1
   model_viewer_plus: ^1.10.0
   path_provider: ^2.1.5
   image_picker: ^1.2.2

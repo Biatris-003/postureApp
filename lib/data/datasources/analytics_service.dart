@@ -67,7 +67,7 @@ class AnalyticsService {
     final snapshot = await _db
         .collection('postureClassifications')
         .where('patientId', isEqualTo: patientId)
-        .where('timestamp', isGreaterThan: sinceTimestamp)
+        .where('timestamp', isGreaterThanOrEqualTo: sinceTimestamp)
         .orderBy('timestamp')
         .get();
 
