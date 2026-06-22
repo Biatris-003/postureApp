@@ -4,6 +4,7 @@ import 'package:video_player/video_player.dart';
 import '../../../domain/entities/exercises/exercise.dart';
 import '../../../utils/exercise_timer.dart';
 import '../widgets/exercise_card_badge.dart';
+import '../../../utils/exercise_constants.dart'; 
 
 class ExerciseDetailScreen extends StatefulWidget {
   final Exercise exercise;
@@ -269,15 +270,84 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
             width: double.infinity,
             child: ElevatedButton(
               onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => ExerciseCoachScreen(
-                      exerciseTitle: widget.exercise.title,
-                      trackReps: widget
-                          .isTracked, // true only for the 4 in weekly assessment
+                final coachId = exerciseTitleToCoachId[widget.exercise.title];
+                final hasCoaching = coachId != null;
+
+                if (hasCoaching) {
+                  // Coached exercise — go straight to camera
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => ExerciseCoachScreen(
+                        exerciseTitle: widget.exercise.title,
+                        trackReps: widget.isTracked,
+                      ),
                     ),
-                  ),
-                );
+                  );
+                } else {
+                  // No coach yet — show a simple bottom sheet
+                  showModalBottomSheet(
+                    context: context,
+                    backgroundColor: Colors.transparent,
+                    builder: (_) => Container(
+                      margin: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 24),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF10141c),
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(color: const Color(0xFF1e2638)),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                              color: Colors.red.withOpacity(0.1),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.sensors_off_rounded,
+                                size: 48, color: Colors.redAccent),
+                          ),
+                          const SizedBox(height: 20),
+                          const Text(
+                            'No Coach Available Yet',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            'AI coaching for "${widget.exercise.title}" is coming soon.',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.white54,
+                              fontSize: 14,
+                              height: 1.6,
+                            ),
+                          ),
+                          const SizedBox(height: 28),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: () => Navigator.pop(context),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF1e2638),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14)),
+                              ),
+                              child: const Text('Got it',
+                                  style: TextStyle(fontWeight: FontWeight.w600)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: _accentColor,

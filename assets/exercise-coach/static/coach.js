@@ -44,24 +44,29 @@ function resetSmoother() {
   for (const k in _smoothed) delete _smoothed[k];
 }
 
-// ── Build exercise selection grid ──────────────
+// IDs that have MediaPipe coaching
+const COACHED_IDS = new Set(['circumduction', 'squat', 'side_bend_right', 'sit_to_stand']);
+
 function buildGrid() {
   const grid = document.getElementById('exercise-grid');
   EXERCISES.forEach(ex => {
+    const hasCoaching = COACHED_IDS.has(ex.id);
     const card = document.createElement('div');
-    card.className = 'ex-card';
+    card.className = 'ex-card' + (hasCoaching ? '' : ' no-coaching');
     card.innerHTML = `
       <span class="card-icon">${ex.icon || '🏋️'}</span>
       <span class="card-type-pill ${ex.type}">${ex.typeLabel}</span>
       <div class="card-name">${ex.name}</div>
       <div class="card-scenario">${ex.scenario}</div>
       <div class="card-cues">${ex.cues}</div>
+      ${!hasCoaching ? '<div class="no-coaching-badge">🚫 NO COACHING FOR THIS EXERCISE YET</div>' : ''}
     `;
-    card.addEventListener('click', () => startExercise(ex));
+    if (hasCoaching) {
+      card.addEventListener('click', () => startExercise(ex));
+    }
     grid.appendChild(card);
   });
 }
-
 // ── Angle math ─────────────────────────────────
 function getAngle(A, B, C) {
   if (!A || !B || !C) return 0;
@@ -361,18 +366,18 @@ function drawAngleOverlays(ctx, canvas, lm, angles, ex) {
     const y   = joint.y * canvas.height;
     const val = angles[a.key];
 
-    const minVal   = a.min !== undefined ? a.min : ex.downAngle;
-    const maxVal   = a.max !== undefined ? a.max : ex.upAngle;
-    const inRange  = val >= minVal && val <= maxVal;
-    const color    = inRange ? '#00d68f' : '#ff5252';
+    const minVal  = a.min !== undefined ? a.min : ex.downAngle;
+    const maxVal  = a.max !== undefined ? a.max : ex.upAngle;
+    const inRange = val >= minVal && val <= maxVal;
+    const color   = inRange ? '#00d68f' : '#ff5252';
 
     ctx.save();
-    ctx.font        = 'bold 13px JetBrains Mono, monospace';
+    ctx.font        = 'bold 18px JetBrains Mono, monospace'; /* was 13px */
     ctx.fillStyle   = color;
-    ctx.strokeStyle = 'rgba(0,0,0,0.7)';
-    ctx.lineWidth   = 3;
-    ctx.strokeText(`${val}°`, x + 10, y - 8);
-    ctx.fillText(`${val}°`, x + 10, y - 8);
+    ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+    ctx.lineWidth   = 4;                                      /* was 3 */
+    ctx.strokeText(`${val}°`, x + 12, y - 10);
+    ctx.fillText(`${val}°`, x + 12, y - 10);
     ctx.restore();
   });
 }
@@ -401,9 +406,7 @@ function updateAnglesDisplay(angles, ex) {
   container.innerHTML = '';
 
   ex.angles.forEach(a => {
-    const val  = angles[a.key] || 0;
-    const pct  = Math.min(100, Math.round((val / 180) * 100));
-
+    const val     = angles[a.key] || 0;
     const minVal  = a.min !== undefined ? a.min : ex.downAngle;
     const maxVal  = a.max !== undefined ? a.max : ex.upAngle;
     const inRange = val >= minVal && val <= maxVal;
@@ -413,9 +416,6 @@ function updateAnglesDisplay(angles, ex) {
       <div class="angle-row">
         <span class="angle-name">${a.name}</span>
         <span class="angle-val" style="color:${color}">${val}°</span>
-      </div>
-      <div class="angle-track">
-        <div class="angle-fill" style="width:${pct}%; background:${color};"></div>
       </div>`;
   });
 }

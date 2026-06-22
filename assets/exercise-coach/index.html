@@ -11,11 +11,8 @@
 </head>
 <body>
 
-  <!-- ══════════════════════════════════════
-       SCREEN 1 — Exercise Selection
-  ══════════════════════════════════════ -->
-  <div id="screen-select" class="screen active">
-
+  <!-- SCREEN 1 — Exercise Selection (kept for fallback/direct web use) -->
+  <div id="screen-select" class="screen">
     <header class="select-header">
       <div class="brand">
         <span class="brand-name">Exercise Coach</span>
@@ -23,78 +20,56 @@
       </div>
       <span class="header-meta">MediaPipe · Real-time</span>
     </header>
-
     <div class="select-body">
       <p class="select-eyebrow">Select a movement</p>
       <h1 class="select-title">What are we<br>working on today?</h1>
       <p class="select-subtitle">Stand in frame and the AI will guide your form in real time.</p>
-
-      <div class="exercise-grid" id="exercise-grid">
-        <!-- Cards injected by coach.js -->
-      </div>
+      <div class="exercise-grid" id="exercise-grid"></div>
     </div>
-
   </div>
 
-  <!-- ══════════════════════════════════════
-       SCREEN 2 — Coaching View
-  ══════════════════════════════════════ -->
+  <!-- SCREEN 2 — Coaching View (camera-first, no top info bar) -->
   <div id="screen-coach" class="screen">
-
-    <div class="top-bar">
-      <button class="btn-back" onclick="goBack()">← Back</button>
-      <div class="top-bar-info">
-        <div class="ex-title" id="coach-title"></div>
-        <div class="ex-subtitle" id="coach-subtitle"></div>
-      </div>
-    </div>
-
     <div class="coach-layout">
 
-      <!-- Left: Camera feed -->
-      <div class="video-wrap">
+      <!-- Camera + overlays — full height -->
+      <div class="video-wrap" id="video-wrap">
         <video id="video" playsinline autoplay muted></video>
         <canvas id="overlay"></canvas>
+
+        <!-- Reps overlay — top right of camera -->
+        <div class="overlay-reps" id="overlay-reps">
+          <div class="overlay-rep-number" id="rep-count">0</div>
+          <div class="overlay-rep-label">REPS</div>
+        </div>
+
+        <!-- Joint angles overlay — top left of camera -->
+        <div class="overlay-angles" id="overlay-angles">
+          <div id="angles-display"></div>
+        </div>
 
         <div class="no-pose" id="no-pose">
           <span class="no-pose-icon">🧍</span>
           <span>Stand in frame to begin</span>
         </div>
 
-        <div class="cam-status">
-          <div class="status-dot neutral" id="status-dot"></div>
-          <div class="status-text" id="status-text">Waiting for pose...</div>
+        <!-- Status dot stays (used by coach.js) but hidden visually -->
+        <div style="display:none">
+          <div id="status-dot"></div>
+          <div id="status-text"></div>
+          <div id="phase-label"><span class="phase-badge start"></span></div>
+          <div id="coach-title"></div>
+          <div id="coach-subtitle"></div>
         </div>
       </div>
 
-      <!-- Right: Data panel -->
-      <div class="panel">
-
-        <!-- Rep counter -->
-        <div class="card rep-card">
-          <div class="card-label">Repetitions</div>
-          <div class="rep-number" id="rep-count">0</div>
-          <div class="rep-label">REPS COMPLETED</div>
-          <div class="phase-wrap">
-            <div id="phase-label"><span class="phase-badge start">Get into position</span></div>
-          </div>
-        </div>
-
-        <!-- Joint angles -->
-        <div class="card">
-          <div class="card-label">Joint Angles</div>
-          <div id="angles-display"></div>
-        </div>
-
-        <!-- Coaching feedback -->
-        <div class="card">
-          <div class="card-label">Coaching</div>
-          <ul class="feedback-list" id="feedback-list">
-            <li class="fb-neutral">ℹ️ Start the exercise to get feedback</li>
-          </ul>
-        </div>
-
+      <!-- Coaching feedback strip — compact, below camera -->
+      <div class="feedback-bar">
+        <ul class="feedback-list" id="feedback-list">
+          <li class="fb-neutral">ℹ️ Get into position to begin</li>
+        </ul>
       </div>
+
     </div>
   </div>
 

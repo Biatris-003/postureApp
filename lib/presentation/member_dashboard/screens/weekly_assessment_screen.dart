@@ -7,6 +7,7 @@ import '../../../utils/exercise_constants.dart';
 import '../../../providers/exercise_progress_provider.dart'; // new
 import '../../../providers/recommended_exercises_provider.dart';
 import '../widgets/exercise_card_badge.dart';
+import 'exercise_coach_screen.dart'; 
 
 class WeeklyAssessmentScreen extends ConsumerWidget {
   const WeeklyAssessmentScreen({Key? key}) : super(key: key);
@@ -183,20 +184,34 @@ class WeeklyAssessmentScreen extends ConsumerWidget {
 
     return GestureDetector(
       onTap: () {
-        // ─── Open the detail screen ────────────────────────────────────
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ExerciseDetailScreen(
-              exercise: exercise,
-              heroTag: 'weekly_exercise_image_${exercise.id}',
-              isTracked: isTracked, // true for the 4, false for others
-              completedReps: completedReps,
-              fromWeeklyAssessment: true, // <-- weekly assessment mode
-            ),
-          ),
-        );
-      },
+  final coachId = exerciseTitleToCoachId[exercise.title];
+  final hasCoaching = coachId != null && isTracked;
+
+  if (hasCoaching) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ExerciseCoachScreen(
+          exerciseTitle: exercise.title,
+          trackReps: true, // weekly assessment always saves
+        ),
+      ),
+    );
+  } else {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ExerciseDetailScreen(
+          exercise: exercise,
+          heroTag: 'weekly_exercise_image_${exercise.id}',
+          isTracked: isTracked,
+          completedReps: completedReps,
+          fromWeeklyAssessment: true,
+        ),
+      ),
+    );
+  }
+},
       child: Container(
         height: 240,
         decoration: BoxDecoration(

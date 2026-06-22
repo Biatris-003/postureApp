@@ -9,6 +9,7 @@ import '../../../utils/exercise_timer.dart';
 import '../../../providers/exercise_progress_provider.dart';
 import '../../../providers/recommended_exercises_provider.dart';
 import '../widgets/exercise_card_badge.dart';
+import 'exercise_coach_screen.dart';
 
 class ExercisesTab extends ConsumerWidget {
   const ExercisesTab({Key? key}) : super(key: key);
@@ -225,20 +226,34 @@ class ExercisesTab extends ConsumerWidget {
 
     return GestureDetector(
       onTap: () {
-        // Always open the detail screen
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ExerciseDetailScreen(
-              exercise: exercise,
-              heroTag: 'exercise_image_${exercise.id}',
-              isTracked: false, // <-- no saving from main tab
-              completedReps: completedReps,
-              fromWeeklyAssessment: false, // <-- main tab mode
-            ),
-          ),
-        );
-      },
+  final coachId = exerciseTitleToCoachId[exercise.title];
+  final hasCoaching = coachId != null;
+
+  if (hasCoaching) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ExerciseCoachScreen(
+          exerciseTitle: exercise.title,
+          trackReps: false, // main tab never saves
+        ),
+      ),
+    );
+  } else {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ExerciseDetailScreen(
+          exercise: exercise,
+          heroTag: 'exercise_image_${exercise.id}',
+          isTracked: false,
+          completedReps: completedReps,
+          fromWeeklyAssessment: false,
+        ),
+      ),
+    );
+  }
+},
       child: Container(
         height: 240,
         decoration: BoxDecoration(

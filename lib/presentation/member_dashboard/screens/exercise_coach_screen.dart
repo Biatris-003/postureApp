@@ -57,7 +57,6 @@ class _ExerciseCoachScreenState extends ConsumerState<ExerciseCoachScreen>
       ))
       ..loadFlutterAsset('assets/exercise-coach/index.html');
 
-    // Always add the JavaScript channel to receive rep counts
     controller.addJavaScriptChannel(
       'RepCounter',
       onMessageReceived: (JavaScriptMessage message) {
@@ -88,7 +87,6 @@ class _ExerciseCoachScreenState extends ConsumerState<ExerciseCoachScreen>
   }
 
   Future<void> _saveAndPop() async {
-    // Only save if tracking is enabled (weekly assessment)
     if (widget.trackReps && _completedReps > 0 && _coachId != null) {
       final notifier = ref.read(exerciseProgressNotifierProvider.notifier);
       await notifier.saveProgress(_coachId!, _completedReps);
@@ -105,27 +103,6 @@ class _ExerciseCoachScreenState extends ConsumerState<ExerciseCoachScreen>
       },
       child: Scaffold(
         backgroundColor: Colors.black,
-        appBar: AppBar(
-          backgroundColor: Colors.black,
-          foregroundColor: Colors.white,
-          title: Text(
-            widget.exerciseTitle,
-            style: const TextStyle(
-              fontWeight: FontWeight.w700,
-              color: Colors.white,
-              fontSize: 18,
-            ),
-          ),
-          elevation: 0,
-          actions: [
-            if (widget.trackReps)
-              IconButton(
-                icon: const Icon(Icons.check_circle_outline_rounded),
-                onPressed: _saveAndPop,
-                tooltip: 'Finish & save reps',
-              ),
-          ],
-        ),
         body: _buildBody(),
       ),
     );
@@ -133,135 +110,174 @@ class _ExerciseCoachScreenState extends ConsumerState<ExerciseCoachScreen>
 
   Widget _buildBody() {
     if (_permissionDenied) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.08),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.camera_alt_rounded,
-                    size: 56, color: Colors.white54),
-              ),
-              const SizedBox(height: 28),
-              const Text(
-                'Camera Permission Required',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                'Please grant camera access so the AI coach\ncan analyse your exercise form in real-time.',
-                style: TextStyle(color: Colors.white54, fontSize: 15, height: 1.6),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 36),
-              ElevatedButton.icon(
-                onPressed: () => openAppSettings(),
-                icon: const Icon(Icons.settings_rounded),
-                label: const Text('Open App Settings'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF10b981),
-                  foregroundColor: Colors.white,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    if (!_permissionGranted) {
-      return const Center(
+      return SafeArea(
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           children: [
-            CircularProgressIndicator(color: Color(0xFF10b981)),
-            SizedBox(height: 20),
-            Text(
-              'Requesting camera permission…',
-              style: TextStyle(color: Colors.white54, fontSize: 15),
+            _buildTopBar(),
+            Expanded(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.08),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.camera_alt_rounded,
+                            size: 56, color: Colors.white54),
+                      ),
+                      const SizedBox(height: 28),
+                      const Text(
+                        'Camera Permission Required',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'Please grant camera access so the AI coach\ncan analyse your exercise form in real-time.',
+                        style: TextStyle(
+                            color: Colors.white54, fontSize: 15, height: 1.6),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 36),
+                      ElevatedButton.icon(
+                        onPressed: () => openAppSettings(),
+                        icon: const Icon(Icons.settings_rounded),
+                        label: const Text('Open App Settings'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF10b981),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 28, vertical: 14),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
           ],
         ),
       );
     }
 
-    // ── Body with improved banner (only when tracking) ──
-    return Column(
-      children: [
-        if (widget.trackReps)
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-            decoration: BoxDecoration(
-              color: const Color(0xFF10b981).withOpacity(0.2),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFF10b981).withOpacity(0.3)),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.flag_rounded, color: Color(0xFF10b981), size: 20),
-                const SizedBox(width: 10),
-                const Expanded(
-                  child: Text(
-                    'DO AS MUCH CORRECT REPS AS YOU CAN',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                      letterSpacing: 0.5,
+    if (!_permissionGranted) {
+      return SafeArea(
+        child: Column(
+          children: [
+            _buildTopBar(),
+            const Expanded(
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(color: Color(0xFF10b981)),
+                    SizedBox(height: 20),
+                    Text(
+                      'Requesting camera permission…',
+                      style: TextStyle(color: Colors.white54, fontSize: 15),
                     ),
-                    textAlign: TextAlign.center,
-                  ),
+                  ],
                 ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return SafeArea(
+      child: Column(
+        children: [
+          // ── Minimal top bar: Back (left) + Done (right) ──
+          _buildTopBar(),
+
+          // ── Camera — takes all remaining space ──
+          Expanded(
+            child: Stack(
+              children: [
+                WebViewWidget(controller: _controller),
+                if (!_webViewReady)
+                  Container(
+                    color: Colors.black,
+                    child: const Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircularProgressIndicator(color: Color(0xFF10b981)),
+                          SizedBox(height: 20),
+                          Text(
+                            'Loading AI exercise coach…',
+                            style:
+                                TextStyle(color: Colors.white60, fontSize: 16),
+                          ),
+                          SizedBox(height: 8),
+                          Text(
+                            'Make sure you are connected to the internet.',
+                            style:
+                                TextStyle(color: Colors.white38, fontSize: 13),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
-        Expanded(
-          child: Stack(
-            children: [
-              WebViewWidget(controller: _controller),
-              if (!_webViewReady)
-                Container(
-                  color: Colors.black,
-                  child: const Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        CircularProgressIndicator(color: Color(0xFF10b981)),
-                        SizedBox(height: 20),
-                        Text(
-                          'Loading AI exercise coach…',
-                          style: TextStyle(color: Colors.white60, fontSize: 16),
-                        ),
-                        SizedBox(height: 8),
-                        Text(
-                          'Make sure you are connected to the internet.',
-                          style: TextStyle(color: Colors.white38, fontSize: 13),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-            ],
+        ],
+      ),
+    );
+  }
+
+  /// Minimal two-button bar — no title, no subtitle, no phase label.
+  Widget _buildTopBar() {
+    return Container(
+      height: 56,
+      color: Colors.black,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          // Back
+          TextButton.icon(
+            onPressed: _saveAndPop,
+            icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                size: 16, color: Colors.white70),
+            label: const Text('Back',
+                style: TextStyle(color: Colors.white70, fontSize: 14)),
           ),
-        ),
-      ],
+          // Done
+          TextButton(
+            onPressed: _saveAndPop,
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 20, vertical: 7),
+              decoration: BoxDecoration(
+                color: const Color(0xFF10b981),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Text(
+                'Done',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
