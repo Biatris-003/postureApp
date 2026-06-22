@@ -440,7 +440,7 @@ const EXERCISES = [
       },
       {
         check: (a) => a.rightArm >= 165 && a.rightArm <= 180 && a.leftArm >= 165 && a.leftArm <= 180,
-        msg: 'Both arms perfectly horizontal — gflutter run -d RKGL3019E8Wreat T-shape, keep circling!',
+        msg: 'Both arms perfectly horizontal — T-shape, keep circling!',
         type: 'good'
       },
       {

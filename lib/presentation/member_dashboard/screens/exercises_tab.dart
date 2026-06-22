@@ -10,6 +10,7 @@ import '../../../providers/exercise_progress_provider.dart';
 import '../../../providers/recommended_exercises_provider.dart';
 import '../widgets/exercise_card_badge.dart';
 import 'exercise_coach_screen.dart';
+import '../../../providers/exercise_done_provider.dart';
 
 class ExercisesTab extends ConsumerWidget {
   const ExercisesTab({Key? key}) : super(key: key);
@@ -56,11 +57,15 @@ class ExercisesTab extends ConsumerWidget {
           // list, unless they're already present from the posture
           // recommendation above (in which case they keep their
           // percentage-ordered position and are not duplicated). ─────────
-          final exercises = _appendTrackedExercises(
-            recommended: recommendedExercises,
-            tracked: trackedExerciseTitles,
-          );
-
+         final rawExercises = _appendTrackedExercises(
+  recommended: recommendedExercises,
+  tracked: trackedExerciseTitles,
+);
+final doneSet = ref.watch(exerciseDoneProvider).value ?? {};
+final exercises = [
+  ...rawExercises.where((e) => !doneSet.contains(e.title)),
+  ...rawExercises.where((e) =>  doneSet.contains(e.title)),
+];
           if (exercises.isEmpty) {
             return Center(
               child: Padding(
@@ -127,7 +132,7 @@ class ExercisesTab extends ConsumerWidget {
                         padding: const EdgeInsets.only(top: 8.0),
                         child: Text(
                           'Ordered by your most frequent posture patterns '
-                          'this week',
+                          'this week.',
                           style: TextStyle(
                             fontSize: 12,
                             color: Theme.of(context)
@@ -226,34 +231,20 @@ class ExercisesTab extends ConsumerWidget {
 
     return GestureDetector(
       onTap: () {
-  final coachId = exerciseTitleToCoachId[exercise.title];
-  final hasCoaching = coachId != null;
-
-  if (hasCoaching) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ExerciseCoachScreen(
-          exerciseTitle: exercise.title,
-          trackReps: false, // main tab never saves
-        ),
-      ),
-    );
-  } else {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ExerciseDetailScreen(
-          exercise: exercise,
-          heroTag: 'exercise_image_${exercise.id}',
-          isTracked: false,
-          completedReps: completedReps,
-          fromWeeklyAssessment: false,
-        ),
-      ),
-    );
-  }
-},
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ExerciseDetailScreen(
+                exercise: exercise,
+                heroTag: 'exercise_image_${exercise.id}',
+                isTracked: false,
+                completedReps: completedReps,
+                fromWeeklyAssessment: false,
+              ),
+            ),
+          );
+        },
+  
       child: Container(
         height: 240,
         decoration: BoxDecoration(
@@ -298,14 +289,35 @@ class ExercisesTab extends ConsumerWidget {
                 ),
               ),
               Positioned(
-                top: 16,
-                right: 16,
-                child: ExerciseCardBadge(
-                  label: exercise.difficultyLevel,
-                  color: diffColor,
-                ),
-              ),
-              Padding(
+  top: 16,
+  right: 16,
+  child: Consumer(
+    builder: (context, ref, _) {
+      final isDone = ref.watch(exerciseDoneProvider).value?.contains(exercise.title) ?? false;
+      if (isDone) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: const Color(0xFF10b981),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.check_rounded, color: Colors.white, size: 13),
+              SizedBox(width: 4),
+              Text('Completed', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
+            ],
+          ),
+        );
+      }
+      return ExerciseCardBadge(
+        label: exercise.difficultyLevel,
+        color: diffColor,
+      );
+    },
+  ),
+),              Padding(
                 padding: const EdgeInsets.all(20.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,

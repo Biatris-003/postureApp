@@ -4,15 +4,20 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../utils/exercise_constants.dart';
 import '../../../providers/exercise_progress_provider.dart';
+import '../../../providers/exercise_done_provider.dart';
 
 class ExerciseCoachScreen extends ConsumerStatefulWidget {
   final String exerciseTitle;
   final bool trackReps;
+  final bool markDoneOnFinish; // true = mark done in exerciseDoneProvider
+  final bool isWeeklyAssessment; // true = mark done in weekly done provider
 
   const ExerciseCoachScreen({
     super.key,
     required this.exerciseTitle,
     this.trackReps = false,
+    this.markDoneOnFinish = false,
+    this.isWeeklyAssessment = false,
   });
 
   @override
@@ -86,12 +91,61 @@ class _ExerciseCoachScreenState extends ConsumerState<ExerciseCoachScreen>
     );
   }
 
+  Future<void> _stopCamera() async {
+    try {
+      await _controller.runJavaScript('''
+        (function() {
+          if (typeof camera !== 'undefined' && camera) {
+            try { camera.stop(); } catch(e) {}
+            camera = null;
+          }
+          if (window._activeStream) {
+            window._activeStream.getTracks().forEach(function(track) {
+              track.stop();
+            });
+            window._activeStream = null;
+          }
+          var video = document.getElementById('video');
+          if (video && video.srcObject) {
+            video.srcObject.getTracks().forEach(function(track) {
+              track.stop();
+            });
+            video.srcObject = null;
+          }
+        })();
+      ''');
+    } catch (_) {}
+    await Future.delayed(const Duration(milliseconds: 300));
+  }
+
   Future<void> _saveAndPop() async {
+    await _stopCamera();
+
+    // Save rep progress (weekly assessment only)
     if (widget.trackReps && _completedReps > 0 && _coachId != null) {
       final notifier = ref.read(exerciseProgressNotifierProvider.notifier);
       await notifier.saveProgress(_coachId!, _completedReps);
     }
-    if (mounted) Navigator.pop(context);
+
+    // Mark exercise as done in the correct provider
+    if (widget.markDoneOnFinish) {
+      if (widget.isWeeklyAssessment) {
+        await ref
+            .read(weeklyExerciseDoneProvider.notifier)
+            .markDone(widget.exerciseTitle);
+      } else {
+        await ref
+            .read(exerciseDoneProvider.notifier)
+            .markDone(widget.exerciseTitle);
+      }
+    }
+
+    // Pop twice: close coach, then close exercise detail
+    if (mounted) {
+      Navigator.of(context)
+        ..pop() // close coach screen
+        ..pop(); // close exercise detail screen
+    }
   }
 
   @override
@@ -199,10 +253,7 @@ class _ExerciseCoachScreenState extends ConsumerState<ExerciseCoachScreen>
     return SafeArea(
       child: Column(
         children: [
-          // ── Minimal top bar: Back (left) + Done (right) ──
           _buildTopBar(),
-
-          // ── Camera — takes all remaining space ──
           Expanded(
             child: Stack(
               children: [
@@ -239,7 +290,6 @@ class _ExerciseCoachScreenState extends ConsumerState<ExerciseCoachScreen>
     );
   }
 
-  /// Minimal two-button bar — no title, no subtitle, no phase label.
   Widget _buildTopBar() {
     return Container(
       height: 56,
@@ -248,7 +298,6 @@ class _ExerciseCoachScreenState extends ConsumerState<ExerciseCoachScreen>
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Back
           TextButton.icon(
             onPressed: _saveAndPop,
             icon: const Icon(Icons.arrow_back_ios_new_rounded,
@@ -256,7 +305,6 @@ class _ExerciseCoachScreenState extends ConsumerState<ExerciseCoachScreen>
             label: const Text('Back',
                 style: TextStyle(color: Colors.white70, fontSize: 14)),
           ),
-          // Done
           TextButton(
             onPressed: _saveAndPop,
             child: Container(

@@ -11,39 +11,36 @@
 </head>
 <body>
 
-  <!-- SCREEN 1 — Exercise Selection (kept for fallback/direct web use) -->
-  <div id="screen-select" class="screen">
-    <header class="select-header">
-      <div class="brand">
-        <span class="brand-name">Exercise Coach</span>
-        <span class="brand-tag">AI Powered</span>
-      </div>
-      <span class="header-meta">MediaPipe · Real-time</span>
-    </header>
-    <div class="select-body">
-      <p class="select-eyebrow">Select a movement</p>
-      <h1 class="select-title">What are we<br>working on today?</h1>
-      <p class="select-subtitle">Stand in frame and the AI will guide your form in real time.</p>
-      <div class="exercise-grid" id="exercise-grid"></div>
+  <!-- SCREEN 1 — kept for JS compatibility only, never shown -->
+  <div id="screen-select" class="screen" style="display:none !important;">
+    <div class="exercise-grid" id="exercise-grid"></div>
+    <div style="display:none">
+      <div id="coach-title"></div>
+      <div id="coach-subtitle"></div>
     </div>
   </div>
 
-  <!-- SCREEN 2 — Coaching View (camera-first, no top info bar) -->
-  <div id="screen-coach" class="screen">
+  <!-- SCREEN 2 — Coaching View (active immediately) -->
+  <div id="screen-coach" class="screen active">
     <div class="coach-layout">
 
-      <!-- Camera + overlays — full height -->
+      <!-- Exercise title bar at the very top -->
+      <div class="coach-title-bar">
+        <span class="coach-title-text" id="coach-title-display">Loading…</span>
+      </div>
+
+      <!-- Camera + overlays -->
       <div class="video-wrap" id="video-wrap">
         <video id="video" playsinline autoplay muted></video>
         <canvas id="overlay"></canvas>
 
-        <!-- Reps overlay — top right of camera -->
+        <!-- Reps overlay — top right -->
         <div class="overlay-reps" id="overlay-reps">
           <div class="overlay-rep-number" id="rep-count">0</div>
           <div class="overlay-rep-label">REPS</div>
         </div>
 
-        <!-- Joint angles overlay — top left of camera -->
+        <!-- Joint angles overlay — top left -->
         <div class="overlay-angles" id="overlay-angles">
           <div id="angles-display"></div>
         </div>
@@ -53,7 +50,7 @@
           <span>Stand in frame to begin</span>
         </div>
 
-        <!-- Status dot stays (used by coach.js) but hidden visually -->
+        <!-- Hidden elements required by coach.js -->
         <div style="display:none">
           <div id="status-dot"></div>
           <div id="status-text"></div>
@@ -63,10 +60,10 @@
         </div>
       </div>
 
-      <!-- Coaching feedback strip — compact, below camera -->
+      <!-- Coaching feedback strip -->
       <div class="feedback-bar">
         <ul class="feedback-list" id="feedback-list">
-          <li class="fb-neutral">ℹ️ Get into position to begin</li>
+          <li class="fb-neutral">Get into position to begin</li>
         </ul>
       </div>
 

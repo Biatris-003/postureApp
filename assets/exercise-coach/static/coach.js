@@ -131,7 +131,6 @@ async function startExercise(ex) {
   phase      = 'start';
   resetSmoother();
 
-  // Reset stateful exercises — wipe all _state keys to initial values
   if (ex._state) {
     ex._state.inDown     = false;
     ex._state.repCount   = 0;
@@ -139,7 +138,6 @@ async function startExercise(ex) {
     ex._state.upFrames   = 0;
   }
 
-  // Init circumduction circle state
   if (ex.id === 'circumduction') {
     ex._circleState = {
       rightPrevAngle: null,
@@ -149,23 +147,27 @@ async function startExercise(ex) {
     };
   }
 
-  document.getElementById('coach-title').textContent    = ex.name;
-  document.getElementById('coach-subtitle').textContent = ex.cues;
-  document.getElementById('rep-count').textContent      = '0';
+  // Update hidden coach.js elements
+  const titleEl    = document.getElementById('coach-title');
+  const subtitleEl = document.getElementById('coach-subtitle');
+  if (titleEl)    titleEl.textContent    = ex.name;
+  if (subtitleEl) subtitleEl.textContent = ex.cues;
+
+  // Update the visible title bar
+  const displayTitle = document.getElementById('coach-title-display');
+  if (displayTitle) displayTitle.textContent = ex.name;
+
+  document.getElementById('rep-count').textContent = '0';
   setPhaseLabel('start');
   setStatus('neutral', 'Waiting for pose...');
   setFeedback([{ msg: 'Get into position to begin', type: 'neutral' }]);
   clearAngles();
 
-  // ── Send initial rep count (0) to Flutter ──
   sendRepCount();
 
-  document.getElementById('screen-select').classList.remove('active');
-  document.getElementById('screen-coach').classList.add('active');
-
+  // Screen is already active — just init the camera
   await initPose();
 }
-
 // ── Go back ─────────────────────────────────────
 function goBack() {
   if (camera) { try { camera.stop(); } catch(e) {} camera = null; }
@@ -205,13 +207,18 @@ async function initPose() {
   await pose.initialize();
   setStatus('neutral', 'Model ready — starting camera...');
 
-  camera = new Camera(video, {
-    onFrame: async () => { if (pose) await pose.send({ image: video }); },
-    width:  640,
-    height: 480,
-  });
+ camera = new Camera(video, {
+  onFrame: async () => { if (pose) await pose.send({ image: video }); },
+  width:  640,
+  height: 480,
+});
 
-  camera.start();
+camera.start().then(() => {
+  // Save stream reference so Flutter can stop it cleanly
+  if (video.srcObject) {
+    window._activeStream = video.srcObject;
+  }
+});
 }
 
 // ── Process each frame ──────────────────────────
@@ -424,9 +431,8 @@ function setFeedback(items) {
   const list = document.getElementById('feedback-list');
   list.innerHTML = '';
   items.forEach(f => {
-    const icon = f.type === 'good' ? '✅' : f.type === 'warn' ? '⚠️' : 'ℹ️';
-    const cls  = f.type === 'good' ? 'fb-good' : f.type === 'warn' ? 'fb-warn' : 'fb-neutral';
-    list.innerHTML += `<li class="${cls}">${icon} ${f.msg}</li>`;
+    const cls = f.type === 'good' ? 'fb-good' : f.type === 'warn' ? 'fb-warn' : 'fb-neutral';
+    list.innerHTML += `<li class="${cls}">${f.msg}</li>`;
   });
 }
 
@@ -435,4 +441,4 @@ function clearAngles() {
 }
 
 // ── Boot ────────────────────────────────────────
-buildGrid();
+// buildGrid();

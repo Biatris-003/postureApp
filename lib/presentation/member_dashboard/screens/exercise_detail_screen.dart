@@ -5,8 +5,10 @@ import '../../../domain/entities/exercises/exercise.dart';
 import '../../../utils/exercise_timer.dart';
 import '../widgets/exercise_card_badge.dart';
 import '../../../utils/exercise_constants.dart'; 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../providers/exercise_done_provider.dart';
 
-class ExerciseDetailScreen extends StatefulWidget {
+class ExerciseDetailScreen extends ConsumerStatefulWidget {
   final Exercise exercise;
   final String? heroTag;
   final bool isTracked; // true only for the 4 exercises in weekly assessment
@@ -24,10 +26,11 @@ class ExerciseDetailScreen extends StatefulWidget {
   });
 
   @override
-  State<ExerciseDetailScreen> createState() => _ExerciseDetailScreenState();
+  @override
+ConsumerState<ExerciseDetailScreen> createState() => _ExerciseDetailScreenState();
 }
 
-class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
+class _ExerciseDetailScreenState extends ConsumerState<ExerciseDetailScreen> {
   VideoPlayerController? _videoController;
   bool _videoInitialized = false;
   bool _videoError = false;
@@ -132,7 +135,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
       'Keep your chest open, your shoulders relaxed, and avoid twisting your torso.',
       'Hold the side stretch for 20 seconds, then return to the upright position with control.',
     ],
-    'Sit to Stand': [
+    'Sit-to-stand': [
       'Sit upright near the edge of your chair with your feet flat on the floor, hip-width apart.',
       'Lean slightly forward from your hips, keeping your back straight.',
       'Press through your heels and push yourself to a fully upright standing position.',
@@ -280,6 +283,8 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                       builder: (context) => ExerciseCoachScreen(
                         exerciseTitle: widget.exercise.title,
                         trackReps: widget.isTracked,
+                        markDoneOnFinish: true,
+                        isWeeklyAssessment: widget.fromWeeklyAssessment,
                       ),
                     ),
                   );
@@ -434,20 +439,78 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
               ),
             ),
             leading: IconButton(
-              icon: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.4),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.arrow_back_ios_new_rounded,
-                  color: Colors.white,
-                  size: 20,
-                ),
+  icon: Container(
+    padding: const EdgeInsets.all(8),
+    decoration: BoxDecoration(
+      color: Colors.black.withValues(alpha: 0.4),
+      shape: BoxShape.circle,
+    ),
+    child: const Icon(
+      Icons.arrow_back_ios_new_rounded,
+      color: Colors.white,
+      size: 20,
+    ),
+  ),
+  onPressed: () => Navigator.of(context).pop(),
+),
+actions: [
+  if (!widget.fromWeeklyAssessment)
+  Consumer(
+    builder: (context, ref, _) {
+      final doneAsync = ref.watch(exerciseDoneProvider);
+      final isDone = doneAsync.value?.contains(widget.exercise.title) ?? false;
+      return Padding(
+        padding: const EdgeInsets.only(right: 12),
+        child: GestureDetector(
+          onTap: () async {
+            final notifier = ref.read(exerciseDoneProvider.notifier);
+            if (isDone) {
+              await notifier.markUndone(widget.exercise.title);
+            } else {
+              await notifier.markDone(widget.exercise.title);
+              if (context.mounted) {
+                Navigator.of(context).pop();
+              }
+            }
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+            decoration: BoxDecoration(
+              color: isDone
+                  ? const Color(0xFF10b981)
+                  : Colors.black.withValues(alpha: 0.4),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: isDone
+                    ? const Color(0xFF10b981)
+                    : Colors.white.withValues(alpha: 0.3),
               ),
-              onPressed: () => Navigator.of(context).pop(),
             ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  isDone ? Icons.check_circle_rounded : Icons.check_circle_outline_rounded,
+                  color: Colors.white,
+                  size: 15,
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  isDone ? 'Completed' : 'Mark Complete',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  ),
+],
           ),
           SliverToBoxAdapter(
             child: Padding(
