@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../../../data/datasources/auth_service_mock.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:convert';
 
-// ✅ REMOVED: const String currentClinicianId = 'c001';
+import '../../../data/datasources/auth_service_mock.dart';
+import '../../../core/theme/app_theme.dart';
+import 'edit_profile_screen.dart';
+import 'privacy_data_screen.dart';
 
 class AdvisorProfileTab extends ConsumerStatefulWidget {
   const AdvisorProfileTab({super.key});
@@ -16,44 +18,39 @@ class AdvisorProfileTab extends ConsumerStatefulWidget {
 
 class _AdvisorProfileTabState extends ConsumerState<AdvisorProfileTab> {
   Map<String, dynamic>? _clinicianData;
-  String? _clinicianId;         // ✅ resolved dynamically from logged-in user
+  String? _clinicianId;
   bool _isLoading = true;
   bool _notificationsEnabled = true;
 
   @override
   void initState() {
     super.initState();
-    _resolveClinicianAndLoad();  // ✅ replaces direct _loadClinicianData()
+    _resolveClinicianAndLoad();
   }
 
-  // ── Step 1: find the clinician doc that belongs to the logged-in user ──
   Future<void> _resolveClinicianAndLoad() async {
     try {
-      final appUser = ref.read(authStateProvider); // AppUser?
+      final appUser = ref.read(authStateProvider);
       if (appUser == null) {
         setState(() => _isLoading = false);
         return;
       }
-
       final query = await FirebaseFirestore.instance
           .collection('clinicians')
           .where('userId', isEqualTo: appUser.userId)
           .limit(1)
           .get();
-
       if (query.docs.isEmpty) {
         setState(() => _isLoading = false);
         return;
       }
-
-      _clinicianId = query.docs.first.id; // e.g. 'c001'
+      _clinicianId = query.docs.first.id;
       await _loadClinicianData();
     } catch (e) {
       setState(() => _isLoading = false);
     }
   }
 
-  // ── Step 2: load the full clinician document ───────────────────────────
   Future<void> _loadClinicianData() async {
     if (_clinicianId == null) return;
     try {
@@ -70,43 +67,59 @@ class _AdvisorProfileTabState extends ConsumerState<AdvisorProfileTab> {
     }
   }
 
-  Future<void> _pickAndSaveImage() async {
+  Future<void> _openEditProfile(
+      String name, String specialty, String institution, String email) async {
     if (_clinicianId == null) return;
-
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(
-      source: ImageSource.gallery,
-      maxWidth: 400,
-      maxHeight: 400,
-      imageQuality: 70,
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EditProfileScreen(
+          clinicianId: _clinicianId!,
+          initialName: name,
+          initialSpecialty: specialty,
+          initialInstitution: institution,
+          initialEmail: email,
+          initialImageBase64: _clinicianData?['profileImageBase64'],
+        ),
+      ),
     );
+    if (result == true) {
+      await _loadClinicianData();
+      if (mounted) AppToast.show(context, message: 'Profile updated successfully');
+    }
+  }
 
-    if (picked == null) return;
-
-    setState(() => _isLoading = true);
-
-    final bytes = await picked.readAsBytes();
-    final base64Image = base64Encode(bytes);
-
-    await FirebaseFirestore.instance
-        .collection('clinicians')
-        .doc(_clinicianId!)   // ✅ dynamic
-        .update({'profileImageBase64': base64Image});
-
-    await _loadClinicianData();
+  void _openPrivacy() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const PrivacyDataScreen()),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) return const Center(child: CircularProgressIndicator());
+    if (_isLoading) return const _ProfileSkeleton();
 
-    // Guard: if we couldn't resolve the clinician
     if (_clinicianId == null) {
-      return const Center(
-        child: Text(
-          'Could not load profile.\nPlease log in again.',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: Colors.grey),
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.person_off_outlined,
+                  size: 48, color: Colors.grey.shade400),
+              const SizedBox(height: 12),
+              Text(
+                'Could not load profile.\nPlease log in again.',
+                textAlign: TextAlign.center,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(color: AppColors.textSecondaryLight),
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -117,225 +130,295 @@ class _AdvisorProfileTabState extends ConsumerState<AdvisorProfileTab> {
     final email = _clinicianData?['contactEmail'] ?? '';
     final initials = name.split(' ').map((e) => e[0]).take(2).join();
 
-    return SingleChildScrollView(
-      child: Column(
-        children: [
-
-          // ── Header Banner ──────────────────────────────────
-          Container(
-            width: double.infinity,
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFF1565C0), Color(0xFF42A5F5)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+    return Scaffold(
+      backgroundColor: AppColors.surfaceLight,
+      body: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
+        child: Column(
+          children: [
+            _buildHeader(name, specialty, institution, initials),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _sectionLabel('Account'),
+                  const SizedBox(height: 10),
+                  _buildSectionCard(
+                    children: [
+                      _buildInfoRow(Icons.email_outlined, 'Email', email),
+                      const Divider(height: 1, indent: 64),
+                      _buildTapRow(
+                        Icons.edit_outlined,
+                        'Edit Profile',
+                        () => _openEditProfile(name, specialty, institution, email),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  _sectionLabel('Preferences'),
+                  const SizedBox(height: 10),
+                  _buildSectionCard(
+                    children: [
+                      _buildSwitchRow(
+                        Icons.notifications_outlined,
+                        'Notifications',
+                        _notificationsEnabled,
+                        (val) => setState(() => _notificationsEnabled = val),
+                      ),
+                      const Divider(height: 1, indent: 64),
+                      _buildTapRow(
+                        Icons.shield_outlined,
+                        'Privacy & Data',
+                        _openPrivacy,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 28),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        ref.read(authServiceProvider).logout();
+                        ref.read(authStateProvider.notifier).setUser(null);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        elevation: 0,
+                        backgroundColor: Colors.white,
+                        foregroundColor: AppColors.danger,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        side: BorderSide(color: Colors.red.shade100),
+                        padding: const EdgeInsets.symmetric(vertical: 18),
+                      ),
+                      child: const Text(
+                        'Log Out',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-            child: SafeArea(
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Header ────────────────────────────────────────────────
+
+  Widget _buildHeader(
+    String name,
+    String specialty,
+    String institution,
+    String initials,
+  ) {
+    final image = _clinicianData?['profileImageBase64'];
+
+    return Container(
+      height: 340,
+      decoration: const BoxDecoration(
+        gradient: AppColors.headerGradient,
+        borderRadius: BorderRadius.only(
+          bottomLeft: Radius.circular(42),
+          bottomRight: Radius.circular(42),
+        ),
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: Stack(
+          clipBehavior: Clip.hardEdge,
+          children: [
+
+            Positioned(
+              right: -60,
+              top: -50,
+              child: Container(
+                width: 220,
+                height: 220,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: .18),
+                ),
+              ),
+            ),
+
+            Positioned(
+              right: 40,
+              top: 120,
+              child: Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: .10),
+                ),
+              ),
+            ),
+
+            // Doctor photo — no camera button, purely display
+            Positioned(
+              right: 0,
+              bottom: 0,
+              top: 0,
+              width: MediaQuery.of(context).size.width * 0.55,
+              child: image != null
+                  ? Image.memory(
+                      base64Decode(image),
+                      fit: BoxFit.fitHeight,
+                      alignment: Alignment.bottomCenter,
+                      filterQuality: FilterQuality.high,
+                    )
+                  : Align(
+                      alignment: Alignment.center,
+                      child: Text(
+                        initials,
+                        style: TextStyle(
+                          fontSize: 90,
+                          color: Colors.black.withValues(alpha: .12),
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+            ),
+
+            // Left text — no camera button
+            Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: MediaQuery.of(context).size.width * 0.52,
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(24, 32, 24, 40),
+                padding: const EdgeInsets.only(
+                    left: 26, top: 28, bottom: 28, right: 8),
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Avatar
-                    GestureDetector(
-                      onTap: _pickAndSaveImage,
-                      child: Stack(
+                    const Spacer(),
+                    Text(
+                      specialty.toUpperCase(),
+                      style: TextStyle(
+                        color: AppColors.primaryDeep.withValues(alpha: .70),
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      name,
+                      maxLines: 3,
+                      style: const TextStyle(
+                        height: 1.1,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF1B2430),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    if (institution.isNotEmpty)
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Container(
-                            width: 90,
-                            height: 90,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border:
-                                  Border.all(color: Colors.white, width: 3),
-                            ),
-                            child: ClipOval(
-                              child: _clinicianData?['profileImageBase64'] !=
-                                      null
-                                  ? Image.memory(
-                                      base64Decode(_clinicianData![
-                                          'profileImageBase64']),
-                                      fit: BoxFit.cover,
-                                    )
-                                  : Container(
-                                      color:
-                                          Colors.white.withOpacity(0.2),
-                                      child: Center(
-                                        child: Text(
-                                          initials,
-                                          style: const TextStyle(
-                                            fontSize: 32,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.white,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 1.5),
+                            child: Icon(
+                              Icons.location_city_rounded,
+                              size: 13,
+                              color: AppColors.primaryDeep.withValues(alpha: .65),
                             ),
                           ),
-                          // Camera icon badge
-                          Positioned(
-                            bottom: 0,
-                            right: 0,
-                            child: Container(
-                              padding: const EdgeInsets.all(4),
-                              decoration: const BoxDecoration(
-                                color: Colors.white,
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(
-                                Icons.camera_alt,
-                                size: 16,
-                                color: Color(0xFF1565C0),
+                          const SizedBox(width: 5),
+                          Expanded(
+                            child: Text(
+                              institution,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: AppColors.primaryDeep.withValues(alpha: .80),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                height: 1.35,
                               ),
                             ),
                           ),
                         ],
                       ),
-                    ),
+                    const SizedBox(height: 10),
                   ],
                 ),
               ),
             ),
-          ),
-
-          // ── Info Cards ─────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-
-                // Info card
-                _buildSectionCard(
-                  children: [
-                    _buildInfoRow(Icons.email_outlined, 'Email', email),
-                    const Divider(height: 1),
-                    _buildInfoRow(
-                        Icons.local_hospital_outlined, 'Specialty', specialty),
-                    const Divider(height: 1),
-                    _buildInfoRow(
-                        Icons.business_outlined, 'Institution', institution),
-                  ],
-                ),
-
-                const SizedBox(height: 12),
-
-                // Edit profile button
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.edit_outlined, size: 18),
-                    label: const Text('Edit Profile'),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      side: const BorderSide(color: Color(0xFF1565C0)),
-                      foregroundColor: const Color(0xFF1565C0),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    onPressed: () => _showEditProfileDialog(
-                        name, specialty, institution, email),
-                  ),
-                ),
-
-                const SizedBox(height: 24),
-                const Text('Settings',
-                    style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87)),
-                const SizedBox(height: 12),
-
-                // Settings card
-                _buildSectionCard(
-                  children: [
-                    _buildSwitchRow(
-                      Icons.notifications_outlined,
-                      'Alerts & Notifications',
-                      _notificationsEnabled,
-                      (val) => setState(() => _notificationsEnabled = val),
-                    ),
-                    const Divider(height: 1),
-                    _buildTapRow(
-                      Icons.shield_outlined,
-                      'Privacy & Data',
-                      () => _showPrivacyDialog(),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 24),
-
-                // Logout button
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    icon: const Icon(Icons.logout, size: 18),
-                    label: const Text('Log Out'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red.shade50,
-                      foregroundColor: Colors.red,
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(color: Colors.red.shade200),
-                      ),
-                    ),
-                    onPressed: () {
-                      ref.read(authServiceProvider).logout();
-                      ref.read(authStateProvider.notifier).setUser(null);
-                    },
-                  ),
-                ),
-
-                const SizedBox(height: 32),
-              ],
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   // ── Helper Widgets ────────────────────────────────────────
 
+  Widget _sectionLabel(String text) => Text(
+        text.toUpperCase(),
+        style: const TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: AppColors.textSecondaryLight,
+          letterSpacing: 0.6,
+        ),
+      );
+
   Widget _buildSectionCard({required List<Widget> children}) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        color: AppColors.cardLight,
+        borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          )
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
         ],
       ),
       child: Column(children: children),
     );
   }
 
+  Widget _iconBadge(IconData icon) => Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: AppColors.primaryDeep.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(11),
+        ),
+        child: Icon(icon, size: 19, color: AppColors.primaryDeep),
+      );
+
   Widget _buildInfoRow(IconData icon, String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Row(
         children: [
-          Icon(icon, size: 20, color: const Color(0xFF1565C0)),
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label,
-                  style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
-              const SizedBox(height: 2),
-              Text(value,
+          _iconBadge(icon),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label,
+                    style:
+                        TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                const SizedBox(height: 3),
+                Text(
+                  value.isEmpty ? '—' : value,
                   style: const TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w500)),
-            ],
+                      fontSize: 14, fontWeight: FontWeight.w600),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -345,20 +428,17 @@ class _AdvisorProfileTabState extends ConsumerState<AdvisorProfileTab> {
   Widget _buildSwitchRow(
       IconData icon, String title, bool value, Function(bool) onChanged) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: Row(
         children: [
-          Icon(icon, size: 20, color: const Color(0xFF1565C0)),
-          const SizedBox(width: 12),
+          _iconBadge(icon),
+          const SizedBox(width: 14),
           Expanded(
-              child: Text(title,
-                  style: const TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w500))),
-          Switch(
-            value: value,
-            onChanged: onChanged,
-            activeThumbColor: const Color(0xFF1565C0),
+            child: Text(title,
+                style: const TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.w600)),
           ),
+          Switch(value: value, onChanged: onChanged),
         ],
       ),
     );
@@ -367,168 +447,67 @@ class _AdvisorProfileTabState extends ConsumerState<AdvisorProfileTab> {
   Widget _buildTapRow(IconData icon, String title, VoidCallback onTap) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(18),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
           children: [
-            Icon(icon, size: 20, color: const Color(0xFF1565C0)),
-            const SizedBox(width: 12),
+            _iconBadge(icon),
+            const SizedBox(width: 14),
             Expanded(
-                child: Text(title,
-                    style: const TextStyle(
-                        fontSize: 14, fontWeight: FontWeight.w500))),
+              child: Text(title,
+                  style: const TextStyle(
+                      fontSize: 14, fontWeight: FontWeight.w600)),
+            ),
             Icon(Icons.chevron_right, color: Colors.grey.shade400),
           ],
         ),
       ),
     );
   }
+}
 
-  // ── Edit Profile Dialog ───────────────────────────────────
+// ── Loading skeleton ───────────────────────────────────────────────────────
 
-  void _showEditProfileDialog(
-      String name, String specialty, String institution, String email) {
-    if (_clinicianId == null) return;
+class _ProfileSkeleton extends StatelessWidget {
+  const _ProfileSkeleton();
 
-    final nameCtrl = TextEditingController(text: name);
-    final specialtyCtrl = TextEditingController(text: specialty);
-    final institutionCtrl = TextEditingController(text: institution);
-    final emailCtrl = TextEditingController(text: email);
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit Profile'),
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildTextField(nameCtrl, 'Full Name', Icons.person_outline),
-              const SizedBox(height: 12),
-              _buildTextField(
-                  specialtyCtrl, 'Specialty', Icons.local_hospital_outlined),
-              const SizedBox(height: 12),
-              _buildTextField(
-                  institutionCtrl, 'Institution', Icons.business_outlined),
-              const SizedBox(height: 12),
-              _buildTextField(emailCtrl, 'Email', Icons.email_outlined),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF1565C0),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-            ),
-            onPressed: () async {
-              await FirebaseFirestore.instance
-                  .collection('clinicians')
-                  .doc(_clinicianId!)   // ✅ dynamic
-                  .update({
-                'fullName': nameCtrl.text,
-                'specialty': specialtyCtrl.text,
-                'institution': institutionCtrl.text,
-                'contactEmail': emailCtrl.text,
-              });
-              Navigator.pop(context);
-              _loadClinicianData();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('✅ Profile updated successfully!'),
-                  backgroundColor: Colors.green,
-                ),
-              );
-            },
-            child:
-                const Text('Save', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTextField(
-      TextEditingController ctrl, String label, IconData icon) {
-    return TextField(
-      controller: ctrl,
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: Icon(icon, size: 20),
-        border:
-            OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      ),
-    );
-  }
-
-  // ── Privacy & Data Dialog ─────────────────────────────────
-
-  void _showPrivacyDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Row(
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: AppColors.surfaceLight,
+      child: SafeArea(
+        child: Column(
           children: [
-            Icon(Icons.shield_outlined, color: Color(0xFF1565C0)),
-            SizedBox(width: 8),
-            Text('Privacy & Data'),
+            Container(
+              width: double.infinity,
+              height: 340,
+              decoration: const BoxDecoration(
+                gradient: AppColors.headerGradient,
+                borderRadius: BorderRadius.only(
+                  bottomLeft: Radius.circular(42),
+                  bottomRight: Radius.circular(42),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: List.generate(
+                  3,
+                  (i) => Container(
+                    margin: const EdgeInsets.only(bottom: 14),
+                    height: 64,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        content: const SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('Data Collection',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-              SizedBox(height: 6),
-              Text(
-                  'We collect posture data, session recordings, and exercise compliance data to provide you and your patients with accurate health insights.'),
-              SizedBox(height: 16),
-              Text('Data Storage',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-              SizedBox(height: 6),
-              Text(
-                  'All data is securely stored using Firebase and encrypted in transit. Patient data is only accessible to their assigned clinician.'),
-              SizedBox(height: 16),
-              Text('Data Sharing',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-              SizedBox(height: 6),
-              Text(
-                  'Patient data is never shared with third parties. Reports are only accessible to the patient and their assigned doctor.'),
-              SizedBox(height: 16),
-              Text('Your Rights',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-              SizedBox(height: 6),
-              Text(
-                  'You may request deletion of your account and all associated data at any time by contacting support.'),
-            ],
-          ),
-        ),
-        actions: [
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF1565C0),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-            ),
-            onPressed: () => Navigator.pop(context),
-            child:
-                const Text('Got it', style: TextStyle(color: Colors.white)),
-          ),
-        ],
       ),
     );
   }

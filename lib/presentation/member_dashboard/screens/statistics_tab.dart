@@ -120,7 +120,7 @@ class _StatisticsTabState extends ConsumerState<StatisticsTab> {
       List<PostureClassification> data;
 
       if (_selectedTimeRange == 0) {
-        data = await service.getClassificationsByDays(patientId, 1);
+        data = await service.getTodayClassifications(patientId);
       } else if (_selectedTimeRange == 1) {
         data = await service.getClassificationsByDays(patientId, 7);
       } else {
