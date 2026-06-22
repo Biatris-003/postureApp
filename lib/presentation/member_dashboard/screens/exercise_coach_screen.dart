@@ -118,6 +118,13 @@ class _ExerciseCoachScreenState extends ConsumerState<ExerciseCoachScreen>
     await Future.delayed(const Duration(milliseconds: 300));
   }
 
+Future<void> _backWithoutSaving() async {
+  await _stopCamera();
+  if (mounted) {
+    Navigator.of(context).pop(); // close coach only, no marking done
+  }
+}
+
   Future<void> _saveAndPop() async {
     await _stopCamera();
 
@@ -151,10 +158,10 @@ class _ExerciseCoachScreenState extends ConsumerState<ExerciseCoachScreen>
   @override
   Widget build(BuildContext context) {
     return WillPopScope(
-      onWillPop: () async {
-        await _saveAndPop();
-        return false;
-      },
+  onWillPop: () async {
+    await _backWithoutSaving();
+    return false;
+  },
       child: Scaffold(
         backgroundColor: Colors.black,
         body: _buildBody(),
@@ -291,41 +298,41 @@ class _ExerciseCoachScreenState extends ConsumerState<ExerciseCoachScreen>
   }
 
   Widget _buildTopBar() {
-    return Container(
-      height: 56,
-      color: Colors.black,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          TextButton.icon(
-            onPressed: _saveAndPop,
-            icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                size: 16, color: Colors.white70),
-            label: const Text('Back',
-                style: TextStyle(color: Colors.white70, fontSize: 14)),
-          ),
-          TextButton(
-            onPressed: _saveAndPop,
-            child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 7),
-              decoration: BoxDecoration(
-                color: const Color(0xFF10b981),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: const Text(
-                'Done',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14,
-                ),
+  return Container(
+    height: 56,
+    color: Colors.black,
+    padding: const EdgeInsets.symmetric(horizontal: 12),
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        TextButton.icon(
+          onPressed: _backWithoutSaving,
+          icon: const Icon(Icons.arrow_back_ios_new_rounded,
+              size: 16, color: Colors.white70),
+          label: const Text('Back',
+              style: TextStyle(color: Colors.white70, fontSize: 14)),
+        ),
+        TextButton(
+          onPressed: _saveAndPop,
+          child: Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 20, vertical: 7),
+            decoration: BoxDecoration(
+              color: const Color(0xFF10b981),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Text(
+              'Done',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+                fontSize: 14,
               ),
             ),
           ),
-        ],
-      ),
-    );
-  }
+        ),
+      ],
+    ),
+  );
+}
 }

@@ -4,14 +4,20 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../../domain/entities/assigned_member.dart';
 import '../../../data/datasources/auth_service_mock.dart';
 import 'package:printing/printing.dart';
-import '../../../data/datasources/auth_service_mock.dart';
+import '../../../core/theme/app_theme.dart';
 import 'dart:convert';
 import 'dart:typed_data';
+import 'chat_screen.dart'; 
 
 class MemberDetailsScreen extends ConsumerStatefulWidget {
   final AssignedMember member;
+  final int initialTabIndex;
 
-  const MemberDetailsScreen({super.key, required this.member});
+  const MemberDetailsScreen({
+    super.key,
+    required this.member,
+    this.initialTabIndex = 0, // default Overview
+  });
 
   @override
   ConsumerState<MemberDetailsScreen> createState() => _MemberDetailsScreenState();
@@ -19,7 +25,6 @@ class MemberDetailsScreen extends ConsumerStatefulWidget {
 
 class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
     with SingleTickerProviderStateMixin {
-
   late TabController _tabController;
   Map<String, dynamic>? _patientData;
   List<Map<String, dynamic>> _exercises = [];
@@ -27,11 +32,12 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
   List<Map<String, dynamic>> _classifications = [];
   List<Map<String, dynamic>> _sessions = [];
   bool _isLoading = true;
+  String? _clinicianLogicalId;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 3, vsync: this, initialIndex: widget.initialTabIndex);
     _loadAllData();
   }
 
@@ -45,6 +51,7 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
     setState(() => _isLoading = true);
     try {
       await _loadPatient(); // must finish first — sessions fall back to email lookup
+      await _resolveClinicianLogicalId();
       await Future.wait([
         _loadExercises(),
         _loadReports(),
@@ -56,6 +63,18 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
     }
     setState(() => _isLoading = false);
   }
+  Future<void> _resolveClinicianLogicalId() async {
+    final appUser = ref.read(authStateProvider);
+    if (appUser == null) return;
+    final query = await FirebaseFirestore.instance
+        .collection('clinicians')
+        .where('userId', isEqualTo: appUser.userId)
+        .limit(1)
+        .get();
+    if (query.docs.isNotEmpty) {
+      _clinicianLogicalId = query.docs.first.data()['clinicianId'] as String?;
+    }
+  }
 
   Future<void> _loadPatient() async {
     final doc = await FirebaseFirestore.instance
@@ -66,7 +85,6 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
   }
 
   Future<void> _loadExercises() async {
-    // Get exercise plan for this patient
     final planSnapshot = await FirebaseFirestore.instance
         .collection('exercisePlans')
         .where('patientId', isEqualTo: widget.member.uid)
@@ -107,7 +125,6 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
   }
 
   Future<void> _loadSessions() async {
-    // Try direct UID first (works when patients doc ID == auth UID)
     var snapshot = await FirebaseFirestore.instance
         .collection('sessionResults')
         .where('patientId', isEqualTo: widget.member.uid)
@@ -115,7 +132,6 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
         .limit(10)
         .get();
 
-    // If nothing found, bridge via email → look up auth UID in users collection
     if (snapshot.docs.isEmpty) {
       final email = _patientData?['contactEmail'] as String?;
       if (email != null) {
@@ -138,6 +154,28 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
 
     _sessions = snapshot.docs.map((doc) => doc.data()).toList();
   }
+
+  void _openChat() {
+      final patientLogicalId = _patientData?['patientId'] as String? ?? widget.member.uid;
+
+      if (_clinicianLogicalId == null) {
+        AppToast.show(context, message: 'Unable to open chat right now', isError: true);
+        return;
+      }
+
+      final chatId = '${_clinicianLogicalId}_$patientLogicalId';
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ChatScreen(
+            chatId: chatId,
+            recipientId: patientLogicalId,
+            recipientName: widget.member.name,
+          ),
+        ),
+      );
+    }
 
   // Calculate posture score
   int get _postureScore {
@@ -164,44 +202,44 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
     return top.key.replaceAll('_', ' ');
   }
 
+  // Score → status color, shared across the screen
+  Color _scoreColor(int score) {
+    if (score >= 70) return AppColors.success;
+    if (score >= 40) return const Color(0xFFB8860B); // muted amber, theme-consistent
+    return AppColors.danger;
+  }
+
   @override
   Widget build(BuildContext context) {
     final name = widget.member.name;
     final initials = name.split(' ').map((e) => e.isNotEmpty ? e[0] : '').take(2).join();
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFD),
+      backgroundColor: AppColors.surfaceLight,
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator(color: AppColors.primaryDeep))
           : NestedScrollView(
               headerSliverBuilder: (context, innerBoxIsScrolled) => [
                 SliverAppBar(
                   expandedHeight: 360,
                   pinned: true,
-                  backgroundColor: const Color(0xFF1565C0),
-                  leading: IconButton(
-                    icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
-                    onPressed: () => Navigator.pop(context),
+                  backgroundColor: AppColors.primaryDeep,
+                  elevation: 0,
+                  leading: _buildAppBarIconButton(
+                    icon: Icons.arrow_back_ios_new,
+                    onTap: () => Navigator.pop(context),
                   ),
                   actions: [
-                    // Chat button
-                    IconButton(
-                      icon: const Icon(Icons.chat_bubble_outline, color: Colors.white),
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Chat coming soon!')),
-                        );
-                      },
+                    _buildAppBarIconButton(
+                      icon: Icons.chat_bubble_outline,
+                      onTap: _openChat,
                     ),
+                    const SizedBox(width: 8),
                   ],
                   flexibleSpace: FlexibleSpaceBar(
                     background: Container(
                       decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [Color(0xFF1565C0), Color(0xFF42A5F5)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
+                        gradient: AppColors.headerGradient,
                       ),
                       child: SafeArea(
                         child: Padding(
@@ -216,16 +254,26 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
                                     height: 70,
                                     decoration: BoxDecoration(
                                       shape: BoxShape.circle,
-                                      color: Colors.white.withOpacity(0.2),
-                                      border: Border.all(color: Colors.white, width: 2.5),
+                                      color: Colors.white,
+                                      border: Border.all(
+                                        color: AppColors.primaryDeep.withValues(alpha: 0.25),
+                                        width: 2,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withValues(alpha: 0.08),
+                                          blurRadius: 10,
+                                          offset: const Offset(0, 3),
+                                        ),
+                                      ],
                                     ),
                                     child: Center(
                                       child: Text(
                                         initials,
                                         style: const TextStyle(
-                                          fontSize: 26,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.white,
+                                          fontSize: 24,
+                                          fontWeight: FontWeight.w800,
+                                          color: AppColors.primaryDeep,
                                         ),
                                       ),
                                     ),
@@ -238,9 +286,9 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
                                         Text(
                                           name,
                                           style: const TextStyle(
-                                            fontSize: 20,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.white,
+                                            fontSize: 19,
+                                            fontWeight: FontWeight.w800,
+                                            color: AppColors.ink,
                                           ),
                                         ),
                                         const SizedBox(height: 4),
@@ -248,19 +296,16 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
                                           _patientData?['contactEmail'] ?? '',
                                           style: TextStyle(
                                             fontSize: 13,
-                                            color: Colors.white.withOpacity(0.8),
+                                            fontWeight: FontWeight.w500,
+                                            color: AppColors.primaryDeep.withValues(alpha: 0.75),
                                           ),
                                         ),
-                                        const SizedBox(height: 6),
+                                        const SizedBox(height: 8),
                                         Row(
                                           children: [
-                                            _buildHeaderTag(
-                                              _patientData?['gender'] ?? '',
-                                            ),
+                                            _buildHeaderTag(_patientData?['gender'] ?? ''),
                                             const SizedBox(width: 8),
-                                            _buildHeaderTag(
-                                              _patientData?['dateOfBirth'] ?? '',
-                                            ),
+                                            _buildHeaderTag(_patientData?['dateOfBirth'] ?? ''),
                                           ],
                                         ),
                                       ],
@@ -304,22 +349,31 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
                     preferredSize: const Size.fromHeight(52),
                     child: Container(
                       margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                      padding: const EdgeInsets.all(4),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.15),
+                        color: Colors.white,
                         borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: AppColors.borderLight),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.06),
+                            blurRadius: 10,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
                       ),
                       child: TabBar(
                         controller: _tabController,
                         indicator: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
+                          color: AppColors.primaryDeep,
+                          borderRadius: BorderRadius.circular(11),
                         ),
                         indicatorSize: TabBarIndicatorSize.tab,
                         dividerColor: Colors.transparent,
-                        labelColor: const Color(0xFF1565C0),
-                        unselectedLabelColor: Colors.white,
-                        labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                        unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+                        labelColor: Colors.white,
+                        unselectedLabelColor: AppColors.textSecondaryLight,
+                        labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                        unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                         tabs: const [
                           Tab(text: 'Overview'),
                           Tab(text: 'Exercises'),
@@ -344,17 +398,47 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
 
   // ── Header Helpers ────────────────────────────────────────
 
+  Widget _buildAppBarIconButton({required IconData icon, required VoidCallback onTap}) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 8),
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.10),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Icon(icon, color: AppColors.primaryDeep, size: 18),
+        ),
+      ),
+    );
+  }
+
   Widget _buildHeaderTag(String text) {
     if (text.isEmpty) return const SizedBox();
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.2),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: AppColors.borderLight),
       ),
       child: Text(
         text,
-        style: const TextStyle(color: Colors.white, fontSize: 11),
+        style: const TextStyle(
+          color: AppColors.textSecondaryLight,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }
@@ -362,29 +446,37 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
   Widget _buildScoreCard(String label, String value, IconData icon) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.15),
-          borderRadius: BorderRadius.circular(14),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
         ),
         child: Column(
           children: [
-            Icon(icon, color: Colors.white, size: 20),
+            Icon(icon, color: AppColors.primaryDeep, size: 20),
             const SizedBox(height: 6),
             Text(
               value,
               style: const TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimaryLight,
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
               ),
             ),
             const SizedBox(height: 2),
             Text(
               label,
-              style: TextStyle(
-                color: Colors.white.withOpacity(0.8),
+              style: const TextStyle(
+                color: AppColors.textSecondaryLight,
                 fontSize: 10,
+                fontWeight: FontWeight.w600,
               ),
               textAlign: TextAlign.center,
             ),
@@ -398,45 +490,32 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
 
   Widget _buildOverviewTab() {
     final score = _postureScore;
-    final scoreColor = score >= 70
-        ? const Color(0xFF4CAF50)
-        : score >= 40
-            ? const Color(0xFFFF9800)
-            : const Color(0xFFFF6B6B);
+    final scoreColor = _scoreColor(score);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-
           // Posture score card
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 15,
-                offset: const Offset(0, 4),
-              )],
-            ),
+          _buildCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text('Posture Analysis',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimaryLight)),
                 const SizedBox(height: 16),
                 Row(
                   children: [
-                    // Score circle
                     Container(
                       width: 80,
                       height: 80,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: scoreColor.withOpacity(0.1),
+                        color: scoreColor.withValues(alpha: 0.10),
                         border: Border.all(color: scoreColor, width: 3),
                       ),
                       child: Center(
@@ -444,7 +523,7 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
                           '$score%',
                           style: TextStyle(
                             fontSize: 20,
-                            fontWeight: FontWeight.bold,
+                            fontWeight: FontWeight.w800,
                             color: scoreColor,
                           ),
                         ),
@@ -462,7 +541,7 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
                                     ? 'Needs Attention'
                                     : 'Critical — Immediate Action',
                             style: TextStyle(
-                              fontWeight: FontWeight.bold,
+                              fontWeight: FontWeight.w700,
                               color: scoreColor,
                               fontSize: 14,
                             ),
@@ -470,12 +549,14 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
                           const SizedBox(height: 6),
                           Text(
                             'Most problematic: ${_mostProblematic.isEmpty ? 'N/A' : _mostProblematic}',
-                            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                            style: const TextStyle(
+                                fontSize: 12, color: AppColors.textSecondaryLight),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             'Based on ${_classifications.length} readings',
-                            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                            style: const TextStyle(
+                                fontSize: 12, color: AppColors.textSecondaryLight),
                           ),
                         ],
                       ),
@@ -489,22 +570,15 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
           const SizedBox(height: 16),
 
           // Patient info card
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 15,
-                offset: const Offset(0, 4),
-              )],
-            ),
+          _buildCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text('Patient Information',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                    style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimaryLight)),
                 const SizedBox(height: 16),
                 _buildInfoRow(Icons.email_outlined, 'Email',
                     _patientData?['contactEmail'] ?? 'N/A'),
@@ -532,9 +606,9 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: const Color(0xFFF0F7FF),
+              color: AppColors.primaryDeep.withValues(alpha: 0.06),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: const Color(0xFFBBDEFB)),
+              border: Border.all(color: AppColors.primaryDeep.withValues(alpha: 0.18)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -542,18 +616,18 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
                 Row(
                   children: [
                     const Icon(Icons.note_alt_outlined,
-                        color: Color(0xFF1565C0), size: 20),
+                        color: AppColors.primaryDeep, size: 20),
                     const SizedBox(width: 8),
-                    const Text('Doctor\'s Note',
+                    const Text("Doctor's Note",
                         style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF1565C0))),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.primaryDeep)),
                     const Spacer(),
                     GestureDetector(
                       onTap: _showEditNoteDialog,
                       child: const Icon(Icons.edit_outlined,
-                          color: Color(0xFF1565C0), size: 18),
+                          color: AppColors.primaryDeep, size: 18),
                     ),
                   ],
                 ),
@@ -561,8 +635,8 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
                 Text(
                   _patientData?['doctorNote'] ??
                       'No note added yet. Tap edit to add a note about this patient.',
-                  style: TextStyle(
-                    color: Colors.grey.shade700,
+                  style: const TextStyle(
+                    color: AppColors.textSecondaryLight,
                     fontSize: 13,
                     height: 1.5,
                   ),
@@ -575,31 +649,44 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
     );
   }
 
-  // ── Session History ───────────────────────────────────────
+  // ── Shared card wrapper ────────────────────────────────────
 
-  Widget _buildSessionsSection() {
+  Widget _buildCard({required Widget child}) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(
-          color: Colors.black.withOpacity(0.05),
-          blurRadius: 15,
-          offset: const Offset(0, 4),
-        )],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 15,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
+      child: child,
+    );
+  }
+
+  // ── Session History ───────────────────────────────────────
+
+  Widget _buildSessionsSection() {
+    return _buildCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               const Text('Session History',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimaryLight)),
               const Spacer(),
               Text(
                 '${_sessions.length} recent',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                style: const TextStyle(fontSize: 12, color: AppColors.textSecondaryLight),
               ),
             ],
           ),
@@ -627,11 +714,7 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
     DateTime? date;
     if (startTs is Timestamp) date = startTs.toDate();
 
-    final scoreColor = score >= 70
-        ? const Color(0xFF4CAF50)
-        : score >= 40
-            ? const Color(0xFFFF9800)
-            : const Color(0xFFFF6B6B);
+    final scoreColor = _scoreColor(score);
 
     final dateStr = date != null
         ? '${date.day}/${date.month}/${date.year}  '
@@ -646,7 +729,7 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
             width: 42,
             height: 42,
             decoration: BoxDecoration(
-              color: scoreColor.withOpacity(0.1),
+              color: scoreColor.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Center(
@@ -654,7 +737,7 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
                 '$score%',
                 style: TextStyle(
                   fontSize: 11,
-                  fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.w700,
                   color: scoreColor,
                 ),
               ),
@@ -667,12 +750,15 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
               children: [
                 Text(
                   dateStr,
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                  style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimaryLight),
                 ),
                 const SizedBox(height: 2),
                 Text(
                   '${duration}min  ·  $status',
-                  style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                  style: const TextStyle(fontSize: 11, color: AppColors.textSecondaryLight),
                 ),
               ],
             ),
@@ -681,14 +767,14 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
               color: status == 'completed'
-                  ? const Color(0xFF4CAF50).withOpacity(0.1)
-                  : Colors.orange.withOpacity(0.1),
+                  ? AppColors.success.withValues(alpha: 0.10)
+                  : const Color(0xFFB8860B).withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(
               status == 'completed' ? Icons.check_circle_outline : Icons.cancel_outlined,
               size: 16,
-              color: status == 'completed' ? const Color(0xFF4CAF50) : Colors.orange,
+              color: status == 'completed' ? AppColors.success : const Color(0xFFB8860B),
             ),
           ),
         ],
@@ -713,7 +799,7 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
                   icon: const Icon(Icons.add),
                   label: const Text('Add Exercise'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1565C0),
+                    backgroundColor: AppColors.primaryDeep,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12)),
@@ -734,8 +820,8 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
                     icon: const Icon(Icons.add),
                     label: const Text('Add Exercise'),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF1565C0),
-                      side: const BorderSide(color: Color(0xFF1565C0)),
+                      foregroundColor: AppColors.primaryDeep,
+                      side: const BorderSide(color: AppColors.primaryDeep),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12)),
@@ -751,13 +837,15 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
 
   Widget _buildExerciseCard(Map<String, dynamic> exercise) {
     final region = exercise['targetSpinalRegion'] ?? '';
+    // Theme-consistent slate-blue ramp — distinct shades for quick scanning,
+    // not arbitrary/stereotyped colors.
     final regionColors = {
-      'C7': const Color(0xFF5B8FF9),
-      'T4': const Color(0xFF61DDAA),
-      'T12': const Color(0xFFFFB44C),
-      'L5': const Color(0xFFFF6B6B),
+      'C7': AppColors.primaryDeep,
+      'T4': AppColors.primaryMid,
+      'T12': const Color(0xFFB8860B), // muted amber
+      'L5': AppColors.danger,
     };
-    final color = regionColors[region] ?? const Color(0xFF5B8FF9);
+    final color = regionColors[region] ?? AppColors.primaryDeep;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -765,11 +853,13 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(
-          color: Colors.black.withOpacity(0.04),
-          blurRadius: 10,
-          offset: const Offset(0, 2),
-        )],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Row(
         children: [
@@ -777,7 +867,7 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
             width: 48,
             height: 48,
             decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
+              color: color.withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(Icons.fitness_center, color: color, size: 22),
@@ -789,7 +879,10 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
               children: [
                 Text(
                   exercise['name'] ?? '',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                      color: AppColors.textPrimaryLight),
                 ),
                 const SizedBox(height: 4),
                 Row(
@@ -804,14 +897,12 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
               ],
             ),
           ),
-          // Edit button
           IconButton(
-            icon: const Icon(Icons.edit_outlined, color: Color(0xFF1565C0), size: 20),
+            icon: const Icon(Icons.edit_outlined, color: AppColors.primaryDeep, size: 20),
             onPressed: () => _showEditExerciseDialog(exercise),
           ),
-          // Delete button
           IconButton(
-            icon: Icon(Icons.delete_outline, color: Colors.red.shade400, size: 20),
+            icon: const Icon(Icons.delete_outline, color: AppColors.danger, size: 20),
             onPressed: () => _confirmDeleteExercise(exercise),
           ),
         ],
@@ -823,7 +914,7 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
@@ -861,11 +952,7 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
     final score = report['postureScore'] ?? 0;
     final type = report['reportType'] ?? 'report';
     final date = report['generatedAt'] ?? '';
-    final scoreColor = score >= 70
-        ? const Color(0xFF4CAF50)
-        : score >= 40
-            ? const Color(0xFFFF9800)
-            : const Color(0xFFFF6B6B);
+    final scoreColor = _scoreColor(score is int ? score : (score as num).toInt());
 
     String formattedDate = '';
     if (date.isNotEmpty) {
@@ -883,11 +970,13 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
-          boxShadow: [BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          )],
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Row(
           children: [
@@ -895,7 +984,7 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
               width: 48,
               height: 48,
               decoration: BoxDecoration(
-                color: scoreColor.withOpacity(0.1),
+                color: scoreColor.withValues(alpha: 0.10),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(Icons.picture_as_pdf, color: scoreColor, size: 22),
@@ -907,19 +996,22 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
                 children: [
                   Text(
                     type.replaceAll('_', ' ').toUpperCase(),
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        color: AppColors.textPrimaryLight),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     formattedDate,
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                    style: const TextStyle(fontSize: 12, color: AppColors.textSecondaryLight),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     'Tap to view report',
                     style: TextStyle(
                       fontSize: 11,
-                      color: const Color(0xFF1565C0).withOpacity(0.7),
+                      color: AppColors.primaryDeep.withValues(alpha: 0.7),
                     ),
                   ),
                 ],
@@ -928,14 +1020,14 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: scoreColor.withOpacity(0.1),
+                color: scoreColor.withValues(alpha: 0.10),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Text(
                 '$score%',
                 style: TextStyle(
                   color: scoreColor,
-                  fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.w700,
                   fontSize: 14,
                 ),
               ),
@@ -951,14 +1043,18 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
   Widget _buildInfoRow(IconData icon, String label, String value) {
     return Row(
       children: [
-        Icon(icon, size: 18, color: const Color(0xFF1565C0)),
+        Icon(icon, size: 18, color: AppColors.primaryDeep),
         const SizedBox(width: 12),
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label, style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+            Text(label, style: const TextStyle(fontSize: 11, color: AppColors.textSecondaryLight)),
             const SizedBox(height: 2),
-            Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+            Text(value,
+                style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimaryLight)),
           ],
         ),
       ],
@@ -972,7 +1068,7 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Doctor\'s Note'),
+        title: const Text("Doctor's Note"),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         content: TextField(
           controller: ctrl,
@@ -989,7 +1085,7 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF1565C0),
+              backgroundColor: AppColors.primaryDeep,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
             onPressed: () async {
@@ -1000,12 +1096,7 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
               Navigator.pop(context);
               await _loadPatient();
               setState(() {});
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('✅ Note saved!'),
-                  backgroundColor: Colors.green,
-                ),
-              );
+              if (mounted) AppToast.show(context, message: 'Note saved');
             },
             child: const Text('Save', style: TextStyle(color: Colors.white)),
           ),
@@ -1030,7 +1121,7 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
+              backgroundColor: AppColors.danger,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
             onPressed: () async {
@@ -1041,12 +1132,7 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
               Navigator.pop(context);
               await _loadExercises();
               setState(() {});
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('🗑️ Exercise deleted'),
-                  backgroundColor: Colors.red,
-                ),
-              );
+              if (mounted) AppToast.show(context, message: 'Exercise deleted', isError: true);
             },
             child: const Text('Delete', style: TextStyle(color: Colors.white)),
           ),
@@ -1090,8 +1176,7 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
                   items: ['C7', 'T4', 'T12', 'L5']
                       .map((r) => DropdownMenuItem(value: r, child: Text(r)))
                       .toList(),
-                  onChanged: (val) =>
-                      setDialogState(() => selectedRegion = val!),
+                  onChanged: (val) => setDialogState(() => selectedRegion = val!),
                 ),
               ],
             ),
@@ -1103,9 +1188,8 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1565C0),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                backgroundColor: AppColors.primaryDeep,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
               onPressed: () async {
                 final appUser = ref.read(authStateProvider);
@@ -1121,7 +1205,6 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
                   }
                 }
 
-                // Get or create exercise plan
                 final planSnapshot = await FirebaseFirestore.instance
                     .collection('exercisePlans')
                     .where('patientId', isEqualTo: widget.member.uid)
@@ -1142,9 +1225,7 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
                   planId = planSnapshot.docs.first.id;
                 }
 
-                await FirebaseFirestore.instance
-                    .collection('exercises')
-                    .add({
+                await FirebaseFirestore.instance.collection('exercises').add({
                   'planId': planId,
                   'name': nameCtrl.text,
                   'repetitions': int.tryParse(repsCtrl.text) ?? 10,
@@ -1155,12 +1236,7 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
                 Navigator.pop(context);
                 await _loadExercises();
                 setState(() {});
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('✅ Exercise added!'),
-                    backgroundColor: Colors.green,
-                  ),
-                );
+                if (mounted) AppToast.show(context, message: 'Exercise added');
               },
               child: const Text('Add', style: TextStyle(color: Colors.white)),
             ),
@@ -1172,10 +1248,8 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
 
   void _showEditExerciseDialog(Map<String, dynamic> exercise) {
     final nameCtrl = TextEditingController(text: exercise['name'] ?? '');
-    final repsCtrl = TextEditingController(
-        text: '${exercise['repetitions'] ?? 10}');
-    final durationCtrl = TextEditingController(
-        text: '${exercise['durationSeconds'] ?? 30}');
+    final repsCtrl = TextEditingController(text: '${exercise['repetitions'] ?? 10}');
+    final durationCtrl = TextEditingController(text: '${exercise['durationSeconds'] ?? 30}');
     String selectedRegion = exercise['targetSpinalRegion'] ?? 'L5';
 
     showDialog(
@@ -1207,8 +1281,7 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
                   items: ['C7', 'T4', 'T12', 'L5']
                       .map((r) => DropdownMenuItem(value: r, child: Text(r)))
                       .toList(),
-                  onChanged: (val) =>
-                      setDialogState(() => selectedRegion = val!),
+                  onChanged: (val) => setDialogState(() => selectedRegion = val!),
                 ),
               ],
             ),
@@ -1220,9 +1293,8 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1565C0),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                backgroundColor: AppColors.primaryDeep,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
               onPressed: () async {
                 await FirebaseFirestore.instance
@@ -1238,12 +1310,7 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
                 Navigator.pop(context);
                 await _loadExercises();
                 setState(() {});
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('✅ Exercise updated!'),
-                    backgroundColor: Colors.green,
-                  ),
-                );
+                if (mounted) AppToast.show(context, message: 'Exercise updated');
               },
               child: const Text('Save', style: TextStyle(color: Colors.white)),
             ),
@@ -1257,16 +1324,13 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
     final base64Str = report['pdfBase64'];
 
     if (base64Str == null || base64Str.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No PDF available for this report')),
-      );
+      AppToast.show(context, message: 'No PDF available for this report', isError: true);
       return;
     }
 
     try {
       final bytes = base64Decode(base64Str);
-      
-      // Navigate to a dedicated PDF viewer screen with back button
+
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -1277,9 +1341,7 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
         ),
       );
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to open report: $e')),
-      );
+      AppToast.show(context, message: 'Failed to open report: $e', isError: true);
     }
   }
 
@@ -1315,14 +1377,14 @@ class _PdfViewerScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1565C0),
+        backgroundColor: AppColors.primaryDeep,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
           title,
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
         ),
         actions: [
           IconButton(
