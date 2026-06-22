@@ -2,13 +2,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// Holds the set of exercise titles the user has marked as done TODAY.
-/// Stored in Firestore under:
-///   users/{uid}/exerciseDone/meta        → { date: 'YYYY-MM-DD' }
-///   users/{uid}/exerciseDone/{title}     → { doneAt: timestamp }
-///
-/// On build, if the stored date differs from today, the entire collection
-/// is wiped and starts fresh — no cloud functions needed.
+// ─────────────────────────────────────────────────────────────
+//  EXERCISES TAB — resets at midnight every calendar day
+// ─────────────────────────────────────────────────────────────
+
 class ExerciseDoneNotifier extends AsyncNotifier<Set<String>> {
   FirebaseFirestore get _db => FirebaseFirestore.instance;
   String? get _uid => FirebaseAuth.instance.currentUser?.uid;
@@ -16,28 +13,29 @@ class ExerciseDoneNotifier extends AsyncNotifier<Set<String>> {
   CollectionReference get _col =>
       _db.collection('users').doc(_uid).collection('exerciseDone');
 
-  /// Returns today's date as a string e.g. '2025-06-23'
+  /// Today's date as 'YYYY-MM-DD' — resets at midnight
   String get _today {
     final now = DateTime.now();
-    return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    return '${now.year}-'
+        '${now.month.toString().padLeft(2, '0')}-'
+        '${now.day.toString().padLeft(2, '0')}';
   }
 
   @override
   Future<Set<String>> build() async {
     if (_uid == null) return {};
 
-    // Check what date was stored
     final metaDoc = await _col.doc('__meta__').get();
-    final storedDate = (metaDoc.data() as Map<String, dynamic>?)?['date'] as String?;
+    final data = metaDoc.data() as Map<String, dynamic>?;
+    final storedDate = data?['date'] as String?;
 
     if (storedDate != _today) {
-      // New day — wipe everything and write today's date
+      // New calendar day — wipe and start fresh
       await _clearAll();
       await _col.doc('__meta__').set({'date': _today});
       return {};
     }
 
-    // Same day — load existing done titles (exclude the meta doc)
     final snap = await _col.get();
     return snap.docs
         .where((d) => d.id != '__meta__')
@@ -56,7 +54,9 @@ class ExerciseDoneNotifier extends AsyncNotifier<Set<String>> {
 
   Future<void> markDone(String exerciseTitle) async {
     if (_uid == null) return;
-    await _col.doc(exerciseTitle).set({'doneAt': FieldValue.serverTimestamp()});
+    await _col
+        .doc(exerciseTitle)
+        .set({'doneAt': FieldValue.serverTimestamp()});
     state = AsyncData({...state.value ?? {}, exerciseTitle});
   }
 
@@ -76,8 +76,12 @@ final exerciseDoneProvider =
   ExerciseDoneNotifier.new,
 );
 
-/// Separate done state for the Weekly Assessment tab only.
-/// Same daily-reset logic, stored under a different Firestore sub-collection.
+// ─────────────────────────────────────────────────────────────
+//  WEEKLY ASSESSMENT — resets at the start of each ISO week
+//  (Monday 12:00 AM). Completing on Thursday stays completed
+//  until next Monday.
+// ─────────────────────────────────────────────────────────────
+
 class WeeklyExerciseDoneNotifier extends AsyncNotifier<Set<String>> {
   FirebaseFirestore get _db => FirebaseFirestore.instance;
   String? get _uid => FirebaseAuth.instance.currentUser?.uid;
@@ -85,9 +89,15 @@ class WeeklyExerciseDoneNotifier extends AsyncNotifier<Set<String>> {
   CollectionReference get _col =>
       _db.collection('users').doc(_uid).collection('weeklyExerciseDone');
 
-  String get _today {
+  /// Returns the date of the most recent Monday as 'YYYY-MM-DD'.
+  /// This is the "week key" — same value for every day Mon–Sun of the same week.
+  String get _currentWeekKey {
     final now = DateTime.now();
-    return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    // weekday: Mon=1, Tue=2, ... Sun=7
+    final monday = now.subtract(Duration(days: now.weekday - 1));
+    return '${monday.year}-'
+        '${monday.month.toString().padLeft(2, '0')}-'
+        '${monday.day.toString().padLeft(2, '0')}';
   }
 
   @override
@@ -95,12 +105,15 @@ class WeeklyExerciseDoneNotifier extends AsyncNotifier<Set<String>> {
     if (_uid == null) return {};
 
     final metaDoc = await _col.doc('__meta__').get();
-    final storedDate =
-        (metaDoc.data() as Map<String, dynamic>?)?['date'] as String?;
+    final data = metaDoc.data() as Map<String, dynamic>?;
+    final storedWeek = data?['weekStarting'] as String?;
 
-    if (storedDate != _today) {
+    if (storedWeek != _currentWeekKey) {
+      // New week — wipe and start fresh
       await _clearAll();
-      await _col.doc('__meta__').set({'date': _today});
+      await _col
+          .doc('__meta__')
+          .set({'weekStarting': _currentWeekKey});
       return {};
     }
 
