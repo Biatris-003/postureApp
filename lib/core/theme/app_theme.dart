@@ -44,8 +44,8 @@ class AppColors {
   // that showed up with the original 3-color, no-stops version.
 static const headerGradient = LinearGradient(
   colors: [
-    Color(0xFFB8CCEB),
-    Color(0xFFCBDAF0),
+    Color.fromARGB(255, 68, 85, 112),
+    Color.fromARGB(255, 181, 202, 233),
     Color(0xFFD6E4F7),
   ],
   stops: [0.0, 0.5, 1.0],

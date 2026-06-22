@@ -284,7 +284,7 @@ class _AdvisorProfileTabState extends ConsumerState<AdvisorProfileTab> {
                     ),
             ),
 
-            // Left text — no camera button
+            // Left text 
             Positioned(
               left: 0,
               top: 0,
@@ -292,21 +292,22 @@ class _AdvisorProfileTabState extends ConsumerState<AdvisorProfileTab> {
               width: MediaQuery.of(context).size.width * 0.52,
               child: Padding(
                 padding: const EdgeInsets.only(
-                    left: 26, top: 28, bottom: 28, right: 8),
+                    left: 20, top: 28, bottom: 28, right: 8),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Spacer(),
+                    // const Spacer(flex: 7),
+                    const SizedBox(height: 60),
                     Text(
                       specialty.toUpperCase(),
                       style: TextStyle(
-                        color: AppColors.primaryDeep.withValues(alpha: .70),
-                        fontSize: 10.5,
+                        color: const Color.fromARGB(255, 30, 44, 61).withValues(alpha: .70),
+                        fontSize: 14,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 1.2,
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 20),
                     Text(
                       name,
                       maxLines: 3,
@@ -317,7 +318,7 @@ class _AdvisorProfileTabState extends ConsumerState<AdvisorProfileTab> {
                         color: Color(0xFF1B2430),
                       ),
                     ),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 20),
                     if (institution.isNotEmpty)
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -337,7 +338,7 @@ class _AdvisorProfileTabState extends ConsumerState<AdvisorProfileTab> {
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                color: AppColors.primaryDeep.withValues(alpha: .80),
+                                color: const Color.fromARGB(255, 30, 44, 61).withValues(alpha: .80),
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
                                 height: 1.35,

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../data/datasources/auth_service_mock.dart';
+import '../../../core/theme/app_theme.dart';
 import 'assigned_members_tab.dart';
 import 'advisor_profile_tab.dart';
 import 'notifications_tab.dart';
@@ -19,7 +20,7 @@ class AdvisorDashboardScreen extends ConsumerStatefulWidget {
 class _AdvisorDashboardScreenState
     extends ConsumerState<AdvisorDashboardScreen> {
   int _currentIndex = 0;
-  String? _clinicianId; // ✅ resolved dynamically, no longer hardcoded
+  String? _clinicianLogicalId; // e.g. "c001" — matches notifications.clinicianId
 
   @override
   void initState() {
@@ -40,11 +41,49 @@ class _AdvisorDashboardScreenState
 
     if (query.docs.isEmpty) return;
 
+    final doc = query.docs.first;
     setState(() {
-      _clinicianId = query.docs.first.id; // e.g. 'c001'
+      // notifications.clinicianId stores the logical ID (e.g. "c001"),
+      // not the Firestore doc ID — fall back to doc.id only if the field
+      // is missing, same resolution pattern used in AssignedMembersTab.
+      _clinicianLogicalId = doc.data()['clinicianId'] as String? ?? doc.id;
     });
   }
+// @override
+// void initState() {
+//   super.initState();
+//   _resolveClinicianId();
+// }
 
+// Future<void> _resolveClinicianId() async {
+//   final appUser = ref.read(authStateProvider);
+//   debugPrint('🔴 BADGE DEBUG — appUser: $appUser');
+//   if (appUser == null) {
+//     debugPrint('🔴 BADGE DEBUG — STOPPED: appUser is null');
+//     return;
+//   }
+
+//   final query = await FirebaseFirestore.instance
+//       .collection('clinicians')
+//       .where('userId', isEqualTo: appUser.userId)
+//       .limit(1)
+//       .get();
+
+//   debugPrint('🔴 BADGE DEBUG — clinician docs found: ${query.docs.length}');
+//   if (query.docs.isEmpty) {
+//     debugPrint('🔴 BADGE DEBUG — STOPPED: no clinician doc for userId=${appUser.userId}');
+//     return;
+//   }
+
+//   final doc = query.docs.first;
+//   final resolvedId = doc.data()['clinicianId'] as String? ?? doc.id;
+//   debugPrint('🔴 BADGE DEBUG — resolved clinicianLogicalId: $resolvedId');
+
+//   if (!mounted) return;
+//   setState(() {
+//     _clinicianLogicalId = resolvedId;
+//   });
+// }
   Widget _getTab(int index) {
     switch (index) {
       case 0:
@@ -61,39 +100,38 @@ class _AdvisorDashboardScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFD),
+      backgroundColor: AppColors.surfaceLight,
       body: _getTab(_currentIndex),
 
       // ── Bottom Navigation ─────────────────────────
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: Colors.white,
+          border: const Border(
+            top: BorderSide(color: AppColors.borderLight, width: 1),
+          ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.08),
-              blurRadius: 20,
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 16,
               offset: const Offset(0, -4),
             ),
           ],
         ),
         child: SafeArea(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _buildNavItem(
-                    0, Icons.people_outline, Icons.people, 'Patients'),
-
+                _buildNavItem(0, Icons.people_outline, Icons.people, 'Patients'),
                 _buildNavItemWithLiveBadge(
                   1,
                   Icons.notifications_outlined,
                   Icons.notifications,
                   'Alerts',
                 ),
-
-                _buildNavItem(
-                    2, Icons.person_outline, Icons.person, 'Profile'),
+                _buildNavItem(2, Icons.person_outline, Icons.person, 'Profile'),
               ],
             ),
           ),
@@ -115,10 +153,10 @@ class _AdvisorDashboardScreenState
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 9),
         decoration: BoxDecoration(
           color: isSelected
-              ? const Color(0xFF1565C0).withOpacity(0.1)
+              ? AppColors.primaryDeep.withValues(alpha: 0.10)
               : Colors.transparent,
           borderRadius: BorderRadius.circular(14),
         ),
@@ -127,20 +165,16 @@ class _AdvisorDashboardScreenState
           children: [
             Icon(
               isSelected ? activeIcon : icon,
-              color:
-                  isSelected ? const Color(0xFF1565C0) : Colors.grey.shade400,
-              size: 24,
+              color: isSelected ? AppColors.primaryDeep : AppColors.textSecondaryLight,
+              size: 23,
             ),
             const SizedBox(height: 4),
             Text(
               label,
               style: TextStyle(
                 fontSize: 11,
-                fontWeight:
-                    isSelected ? FontWeight.bold : FontWeight.normal,
-                color: isSelected
-                    ? const Color(0xFF1565C0)
-                    : Colors.grey.shade400,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                color: isSelected ? AppColors.primaryDeep : AppColors.textSecondaryLight,
               ),
             ),
           ],
@@ -155,16 +189,16 @@ class _AdvisorDashboardScreenState
       int index, IconData icon, IconData activeIcon, String label) {
     final isSelected = _currentIndex == index;
 
-    // ✅ If clinicianId not resolved yet, show badge with 0 (no crash)
-    if (_clinicianId == null) {
+    // If clinicianId not resolved yet, show badge with 0 (no crash)
+    if (_clinicianLogicalId == null) {
       return _buildNavItem(index, icon, activeIcon, label);
     }
 
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('notifications')
-          .where('clinicianId', isEqualTo: _clinicianId) // ✅ dynamic
-          .where('isRead', isEqualTo: false)
+          .where('clinicianId', isEqualTo: _clinicianLogicalId) // logical ID, matches doc field
+          .where('isRead', isEqualTo: false) // unread only
           .snapshots(),
       builder: (context, snapshot) {
         final count = snapshot.data?.docs.length ?? 0;
@@ -176,11 +210,10 @@ class _AdvisorDashboardScreenState
           },
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            padding:
-                const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 9),
             decoration: BoxDecoration(
               color: isSelected
-                  ? const Color(0xFF1565C0).withOpacity(0.1)
+                  ? AppColors.primaryDeep.withValues(alpha: 0.10)
                   : Colors.transparent,
               borderRadius: BorderRadius.circular(14),
             ),
@@ -193,9 +226,9 @@ class _AdvisorDashboardScreenState
                     Icon(
                       isSelected ? activeIcon : icon,
                       color: isSelected
-                          ? const Color(0xFF1565C0)
-                          : Colors.grey.shade400,
-                      size: 24,
+                          ? AppColors.primaryDeep
+                          : AppColors.textSecondaryLight,
+                      size: 23,
                     ),
                     if (count > 0)
                       Positioned(
@@ -203,18 +236,19 @@ class _AdvisorDashboardScreenState
                         right: -6,
                         child: Container(
                           padding: const EdgeInsets.all(3),
-                          decoration: const BoxDecoration(
-                            color: Color(0xFFFF6B6B),
+                          decoration: BoxDecoration(
+                            color: AppColors.danger,
                             shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 1.5),
                           ),
-                          constraints: const BoxConstraints(
-                              minWidth: 16, minHeight: 16),
+                          constraints:
+                              const BoxConstraints(minWidth: 16, minHeight: 16),
                           child: Text(
                             count > 9 ? '9+' : '$count',
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 9,
-                              fontWeight: FontWeight.bold,
+                              fontWeight: FontWeight.w700,
                             ),
                             textAlign: TextAlign.center,
                           ),
@@ -227,11 +261,8 @@ class _AdvisorDashboardScreenState
                   label,
                   style: TextStyle(
                     fontSize: 11,
-                    fontWeight:
-                        isSelected ? FontWeight.bold : FontWeight.normal,
-                    color: isSelected
-                        ? const Color(0xFF1565C0)
-                        : Colors.grey.shade400,
+                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                    color: isSelected ? AppColors.primaryDeep : AppColors.textSecondaryLight,
                   ),
                 ),
               ],
