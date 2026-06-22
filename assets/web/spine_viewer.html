@@ -151,11 +151,15 @@
     var patientMixer = null;
     var patientBackBones = [];
     var patientArmSupports = [];
+    var patientHeadAnchorBone = null;
     var spineRegistration = { centerX: 0, centerZ: 0.05, backDirection: 1 };
     var patientLoader = new THREE.GLTFLoader();
 
     window.loadPatientModel = function(modelUrl) {
       if (patientModel) scene.remove(patientModel);
+      patientBackBones = [];
+      patientArmSupports = [];
+      patientHeadAnchorBone = null;
 
       patientLoader.load(
       modelUrl,
@@ -231,7 +235,7 @@
           }
           spineRegistration = {
             centerX: bodyCentre.x,
-            centerZ: bodyCentre.z + backDirection * Math.min(bodySize.z * 0.22, 0.10),
+            centerZ: bodyCentre.z + backDirection * Math.min(bodySize.z * 0.10, 0.05),
             backDirection: backDirection
           };
         }
@@ -303,6 +307,11 @@
               worldQuaternion: bone.getWorldQuaternion(new THREE.Quaternion())
             });
           });
+
+        // Use the real rig's head joint as the cervical target. The visible
+        // C1 disc remains sensor driven, but is gently pulled into this point
+        // so the spine enters the head instead of passing through it.
+        patientHeadAnchorBone = findBone('head') || findBone('neck');
       },
       undefined,
       function(error) {
@@ -511,6 +520,72 @@
       );
     }
 
+    function writeSpinePoint(index, point) {
+      discs[index].position.copy(point);
+      spinousProcesses[index].position.set(point.x, point.y, point.z + 0.022);
+
+      linePos[index * 3] = point.x;
+      linePos[index * 3 + 1] = point.y;
+      linePos[index * 3 + 2] = point.z;
+
+      bodyLinePos[index * 3] = point.x - spineRegistration.centerX;
+      bodyLinePos[index * 3 + 1] = point.y;
+      bodyLinePos[index * 3 + 2] = -(point.z - spineRegistration.centerZ - 0.05);
+    }
+
+    function guideCervicalSpineToHead() {
+      if (!patientModel || !patientHeadAnchorBone) return;
+
+      patientModel.updateMatrixWorld(true);
+
+      var c7 = pointAt(IDX.c7);
+      var c1 = pointAt(IDX.c1);
+      var headAnchor = patientHeadAnchorBone.getWorldPosition(new THREE.Vector3());
+
+      // Keep the target anatomically close to C7, but allow enough lateral
+      // travel for the head to lead the top vertebrae during side bending.
+      headAnchor.x = Math.max(c7.x - 0.16, Math.min(c7.x + 0.16, headAnchor.x));
+      headAnchor.y = Math.max(c7.y + 0.08, Math.min(c7.y + 0.24, headAnchor.y));
+      headAnchor.z = Math.max(c7.z - 0.13, Math.min(c7.z + 0.13, headAnchor.z));
+
+      var desiredC1 = new THREE.Vector3(
+        c1.x + (headAnchor.x - c1.x) * 0.86,
+        c1.y + (headAnchor.y - c1.y) * 0.72,
+        c1.z + (headAnchor.z - c1.z) * 0.52
+      );
+      var correction = desiredC1.sub(c1);
+
+      for (var i = IDX.c7 + 1; i <= IDX.c1; i++) {
+        var t = (i - IDX.c7) / (IDX.c1 - IDX.c7);
+        var weight = t * t * (3 - 2 * t);
+        var point = pointAt(i).add(correction.clone().multiplyScalar(weight));
+        writeSpinePoint(i, point);
+      }
+    }
+
+    function refreshCervicalVisuals() {
+      cordGeometry.attributes.position.needsUpdate = true;
+
+      for (var i = IDX.c7; i < IDX.c1; i++) {
+        placeBetween(
+          segs[i],
+          pointAt(i),
+          pointAt(i + 1),
+          i < 6 ? 0.014 : i < 18 ? 0.011 : 0.009,
+          i < 6 ? 0.014 : i < 18 ? 0.011 : 0.009
+        );
+      }
+
+      var neckRegion = backRegions[backRegions.length - 1];
+      placeBetween(
+        neckRegion.mesh,
+        pointAt(neckRegion.config.from),
+        pointAt(neckRegion.config.to),
+        neckRegion.config.width,
+        neckRegion.config.depth
+      );
+    }
+
     window.updateSpine = function(flat) {
       var i;
 
@@ -564,6 +639,8 @@
         bodyLinePos[i * 3 + 1] = py;
         bodyLinePos[i * 3 + 2] = bodyPz;
       }
+
+      guideCervicalSpineToHead();
 
       cordGeometry.attributes.position.needsUpdate = true;
 
@@ -658,6 +735,11 @@
         patientModel.traverse(function(node) {
           if (node.isSkinnedMesh && node.skeleton) node.skeleton.update();
         });
+        guideCervicalSpineToHead();
+        refreshCervicalVisuals();
+        sacrum = pointAt(IDX.sacrum);
+        c7 = pointAt(IDX.c7);
+        c1 = pointAt(IDX.c1);
       }
 
       pelvis.position.copy(sacrum);
