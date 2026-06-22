@@ -1,13 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../data/datasources/auth_service_mock.dart';
-import '../../../data/datasources/exercise_recommendation_service.dart';
 import '../../../data/datasources/exercise_data.dart';
 import '../../../domain/entities/exercises/exercise.dart';
 import 'exercise_detail_screen.dart';
 import '../../../utils/exercise_constants.dart';
 import '../../../providers/exercise_progress_provider.dart'; // new
-import '../../../providers/weekly_posture_counts_provider.dart';
+import '../../../providers/recommended_exercises_provider.dart';
 import '../widgets/exercise_card_badge.dart';
 
 class WeeklyAssessmentScreen extends ConsumerWidget {
@@ -16,7 +14,7 @@ class WeeklyAssessmentScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     // currentUser kept for future use (analytics/personalization).
-    final currentUser = ref.watch(authStateProvider);
+    final recommendedExercisesAsync = ref.watch(recommendedExercisesProvider);
 
     // ─── Posture-based exercises from this week's statistics ────────────
     // weeklyPostureCountsProvider reads straight from Firestore — it does
@@ -24,7 +22,6 @@ class WeeklyAssessmentScreen extends ConsumerWidget {
     // so we must render its `loading` state explicitly instead of
     // collapsing it into an empty map (which made this screen look like
     // it had nothing to show until the data happened to arrive).
-    final postureCountsAsync = ref.watch(weeklyPostureCountsProvider);
 
     // ─── Read progress for display ──────────────────────────────
     final progress = ref.watch(exerciseProgressNotifierProvider);
@@ -32,7 +29,7 @@ class WeeklyAssessmentScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(title: const Text('Weekly Assessment'), centerTitle: true),
-      body: postureCountsAsync.when(
+      body: recommendedExercisesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, stackTrace) => Center(
           child: Padding(
@@ -49,20 +46,14 @@ class WeeklyAssessmentScreen extends ConsumerWidget {
             ),
           ),
         ),
-        data: (postureCountMap) {
-          final recommendationService = ref.watch(
-            exerciseRecommendationServiceProvider,
-          );
-          final recommendedExercises = recommendationService
-              .getRecommendedExercisesFromCounts(postureCountMap);
-
+        data: (recommendedExercises) {
           // ─── Posture-recommended exercises first (already percentage-
           // ordered, qualifying postures only), then the 4 always-tracked
           // exercises appended at the bottom — unless a tracked exercise
           // is already present from the recommendation above, in which
           // case it keeps its percentage-ordered position and is not
           // duplicated at the bottom. ───────────────────────────────────
-          final List<Exercise> exercises = _buildWeeklyList(
+          final exercises = _buildWeeklyList(
             recommended: recommendedExercises,
             tracked: trackedExerciseTitles,
           );

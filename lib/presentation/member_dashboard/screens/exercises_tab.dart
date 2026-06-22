@@ -1,15 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../data/datasources/auth_service_mock.dart';
 import '../../../data/datasources/exercise_data.dart';
-import '../../../data/datasources/exercise_recommendation_service.dart';
 import '../../../domain/entities/exercises/exercise.dart';
 import 'exercise_detail_screen.dart';
 import 'weekly_assessment_screen.dart';
 import '../../../utils/exercise_constants.dart';
 import '../../../utils/exercise_timer.dart';
 import '../../../providers/exercise_progress_provider.dart';
-import '../../../providers/weekly_posture_counts_provider.dart';
+import '../../../providers/recommended_exercises_provider.dart';
 import '../widgets/exercise_card_badge.dart';
 
 class ExercisesTab extends ConsumerWidget {
@@ -19,8 +17,7 @@ class ExercisesTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     // currentUser kept for future use (e.g. analytics, personalization),
     // but the plan itself no longer merges with a separate assigned plan.
-    final currentUser = ref.watch(authStateProvider);
-    final String userId = currentUser?.userId ?? 'unknown';
+    final recommendedExercisesAsync = ref.watch(recommendedExercisesProvider);
 
     // ─── Posture-based exercises from this week's statistics ────────────
     // weeklyPostureCountsProvider reads straight from Firestore — it does
@@ -30,14 +27,13 @@ class ExercisesTab extends ConsumerWidget {
     // explicitly — treating "still loading" the same as "no postures
     // qualified" (returning an empty map) is what made this screen look
     // empty until the data happened to arrive.
-    final postureCountsAsync = ref.watch(weeklyPostureCountsProvider);
 
     // ─── Read progress for display (tracked exercises only) ─────────────
     final progress = ref.watch(exerciseProgressNotifierProvider);
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: postureCountsAsync.when(
+      body: recommendedExercisesAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (error, stackTrace) => Center(
           child: Padding(
@@ -54,19 +50,13 @@ class ExercisesTab extends ConsumerWidget {
             ),
           ),
         ),
-        data: (postureCountMap) {
-          final recommendationService = ref.watch(
-            exerciseRecommendationServiceProvider,
-          );
-          final recommended = recommendationService
-              .getRecommendedExercisesFromCounts(postureCountMap);
-
+        data: (recommendedExercises) {
           // ─── Force-include the 4 tracked exercises at the bottom of the
           // list, unless they're already present from the posture
           // recommendation above (in which case they keep their
           // percentage-ordered position and are not duplicated). ─────────
-          final List<Exercise> exercises = _appendTrackedExercises(
-            recommended: recommended,
+          final exercises = _appendTrackedExercises(
+            recommended: recommendedExercises,
             tracked: trackedExerciseTitles,
           );
 
