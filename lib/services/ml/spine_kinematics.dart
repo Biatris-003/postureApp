@@ -234,15 +234,27 @@ class SpineKinematics {
           .toDouble();
     }
 
-    final dpL5 = deflPitch('L5');
-    final drL5 = deflRoll('L5');
-    final dpT12 = deflPitch('T12');
-    final drT12 = deflRoll('T12');
-    final dpT4 = deflPitch('T4');
-    final drT4 = deflRoll('T4');
-    final dpC7 = deflPitch('C7');
-    final drC7 = deflRoll('C7');
+    // final dpL5 = deflPitch('L5');
+    // final drL5 = deflRoll('L5');
+    // final dpT12 = deflPitch('T12');
+    // final drT12 = deflRoll('T12');
+    // final dpT4 = deflPitch('T4');
+    // final drT4 = deflRoll('T4');
+    // final dpC7 = deflPitch('C7');
+    // final drC7 = deflRoll('C7');
 
+    final dpL5 = -deflRoll('L5');
+    final drL5 = deflPitch('L5');
+
+    final dpT12 = -deflRoll('T12');
+    final drT12 = deflPitch('T12');
+
+    final dpT4 = -deflRoll('T4');
+    final drT4 = deflPitch('T4');
+
+    final dpC7 = -deflRoll('C7');
+    final drC7 = deflPitch('C7');
+    
     // Step 2: smooth interpolation of deflections at each vertebral level.
     final pitch = List<double>.filled(numLevels, 0.0);
     final roll = List<double>.filled(numLevels, 0.0);
