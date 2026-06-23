@@ -545,7 +545,8 @@
       // travel for the head to lead the top vertebrae during side bending.
       headAnchor.x = Math.max(c7.x - 0.16, Math.min(c7.x + 0.16, headAnchor.x));
       headAnchor.y = Math.max(c7.y + 0.08, Math.min(c7.y + 0.24, headAnchor.y));
-      headAnchor.z = Math.max(c7.z - 0.13, Math.min(c7.z + 0.13, headAnchor.z));
+      // Wider posterior range (+0.20) lets the anchor follow the head into extension
+headAnchor.z = Math.max(c7.z - 0.13, Math.min(c7.z + 0.20, headAnchor.z));
 
       var desiredC1 = new THREE.Vector3(
         c1.x + (headAnchor.x - c1.x) * 0.86,
@@ -604,7 +605,7 @@
         // visible anatomy. Preserve the correct character mapping, then
         // mirror only the rendered spine around its neutral back centre.
         bodyPx = Math.max(-0.10, Math.min(0.10, bodyPx));
-        bodyPz = Math.max(-0.04, Math.min(0.12, bodyPz));
+        bodyPz = Math.max(-0.04, Math.min(0.20, bodyPz));
         var px = spineRegistration.centerX + bodyPx;
         var pz = spineRegistration.centerZ + (-bodyPz + 0.03);
 
@@ -623,15 +624,17 @@
           // Lumbar vertebrae stay anchored inside the lower back, never below pelvis
           pz = Math.max(spineRegistration.centerZ - 0.03, Math.min(spineRegistration.centerZ + 0.07, pz));
           px = Math.max(spineRegistration.centerX - 0.07, Math.min(spineRegistration.centerX + 0.07, px));
-        } else if (i === IDX.c1) {
+       } else if (i === IDX.c1) {
         
-          var c7X = linePos[IDX.c7 * 3];
-          var c7Y = linePos[IDX.c7 * 3 + 1];
-          var c7Z = linePos[IDX.c7 * 3 + 2];
-          px = Math.max(c7X - 0.11, Math.min(c7X + 0.11, px));
-          py = Math.max(c7Y + 0.04, Math.min(c7Y + 0.19, py));
-          pz = Math.max(c7Z - 0.11, Math.min(c7Z + 0.11, pz));
-        }
+  var c7X = linePos[IDX.c7 * 3];
+  var c7Y = linePos[IDX.c7 * 3 + 1];
+  var c7Z = linePos[IDX.c7 * 3 + 2];
+  px = Math.max(c7X - 0.11, Math.min(c7X + 0.11, px));
+  // Allow downward travel for extension (head tipping back lowers C1 slightly)
+  py = Math.max(c7Y - 0.02, Math.min(c7Y + 0.19, py));
+  // Posterior limit (~0.20) simulates chair headrest; anterior limit unchanged
+  pz = Math.max(c7Z - 0.11, Math.min(c7Z + 0.20, pz));
+}
 
         discs[i].position.set(px, py, pz);
         spinousProcesses[i].position.set(px, py, pz + 0.022);
