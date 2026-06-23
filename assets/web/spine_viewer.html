@@ -273,12 +273,11 @@
           });
           return match;
         }
-
-        [
-          { name: 'spine',  from: IDX.l5,  to: IDX.t12, weight: 0.70, maxSagittal: 0.31, maxLateral: 0.17 },
-          { name: 'spine1', from: IDX.t12, to: IDX.t4,  weight: 0.90, maxSagittal: 0.26, maxLateral: 0.14 },
-          { name: 'spine2', from: IDX.t4,  to: IDX.c7,  weight: 1.05, maxSagittal: 0.31, maxLateral: 0.17 },
-          { name: 'neck',   from: IDX.c7,  to: IDX.c1,  weight: 0.55, maxSagittal: 0.35, maxLateral: 0.22 }
+[
+          { name: 'spine',  from: IDX.l5,  to: IDX.t12, weight: 0.40, maxSagittal: 0.18, maxLateral: 0.10 },
+          { name: 'spine1', from: IDX.t12, to: IDX.t4,  weight: 0.50, maxSagittal: 0.16, maxLateral: 0.09 },
+          { name: 'spine2', from: IDX.t4,  to: IDX.c7,  weight: 0.55, maxSagittal: 0.18, maxLateral: 0.10 },
+          { name: 'neck',   from: IDX.c7,  to: IDX.c1,  weight: 0.35, maxSagittal: 0.20, maxLateral: 0.12 }
         ].forEach(function(config) {
           var bone = findBone(config.name);
           if (bone) {
@@ -597,30 +596,35 @@
         // Flutter coordinates: X forward, Y up, Z lateral.
         // Three.js coordinates: X lateral, Y up, Z depth.
         var bodyPx = -z;
-        var bodyPz = -x + 0.05;
+        var bodyPz = -x + 0.03;
         // Registration offsets align the normalized sensor chain with the
         // seated character's anatomical back rather than its pelvis center.
         var py = y + 0.16;
         // The skeleton is authored in an opposite world-Z direction to the
         // visible anatomy. Preserve the correct character mapping, then
         // mirror only the rendered spine around its neutral back centre.
-        bodyPx = Math.max(-0.13, Math.min(0.13, bodyPx));
-        bodyPz = Math.max(-0.05, Math.min(0.15, bodyPz));
+        bodyPx = Math.max(-0.10, Math.min(0.10, bodyPx));
+        bodyPz = Math.max(-0.04, Math.min(0.12, bodyPz));
         var px = spineRegistration.centerX + bodyPx;
-        var pz = spineRegistration.centerZ + (-bodyPz + 0.05);
+        var pz = spineRegistration.centerZ + (-bodyPz + 0.03);
 
         // Keep every disc in the centre-back volume of the patient model.
-        px = Math.max(spineRegistration.centerX - 0.13, Math.min(
-          spineRegistration.centerX + 0.13, px));
-        pz = Math.max(spineRegistration.centerZ - 0.10, Math.min(
-          spineRegistration.centerZ + 0.10, pz));
+        px = Math.max(spineRegistration.centerX - 0.10, Math.min(
+          spineRegistration.centerX + 0.10, px));
+        pz = Math.max(spineRegistration.centerZ - 0.06, Math.min(
+          spineRegistration.centerZ + 0.08, pz));
 
         // Contain the two end vertebrae in their anatomical volumes: S1 stays
         // in the pelvis and C1 stays inside the neck/head connection.
-        if (i === IDX.sacrum) {
-          px = Math.max(-0.10, Math.min(0.10, px));
-          pz = Math.max(-0.06, Math.min(0.13, pz));
+       if (i === IDX.sacrum) {
+          px = Math.max(-0.06, Math.min(0.06, px));
+          pz = Math.max(spineRegistration.centerZ - 0.02, Math.min(spineRegistration.centerZ + 0.06, pz));
+        } else if (i <= IDX.l5) {
+          // Lumbar vertebrae stay anchored inside the lower back, never below pelvis
+          pz = Math.max(spineRegistration.centerZ - 0.03, Math.min(spineRegistration.centerZ + 0.07, pz));
+          px = Math.max(spineRegistration.centerX - 0.07, Math.min(spineRegistration.centerX + 0.07, px));
         } else if (i === IDX.c1) {
+        
           var c7X = linePos[IDX.c7 * 3];
           var c7Y = linePos[IDX.c7 * 3 + 1];
           var c7Z = linePos[IDX.c7 * 3 + 2];
@@ -675,19 +679,15 @@
         for (i = 0; i < patientBackBones.length; i++) {
           var item = patientBackBones[i];
           var segmentDirection = bodyPointAt(item.to).sub(bodyPointAt(item.from)).normalize();
-          var sagittal = Math.max(-0.30, Math.min(0.30,
+         var sagittal = Math.max(-0.20, Math.min(0.20,
             Math.atan2(segmentDirection.z, segmentDirection.y)));
-          var lateral = Math.max(-0.24, Math.min(0.24,
+          var lateral = Math.max(-0.16, Math.min(0.16,
             Math.atan2(segmentDirection.x, segmentDirection.y)));
-          // A second, independent human-range guard protects the visual
-          // character even if the incoming spine chain is noisy.
-          var requestedSagittal = sagittal * item.weight * 2.4;
-          // Positive local X is extension toward the chair back. Give that
-          // direction a much smaller limit than forward flexion.
+          var requestedSagittal = sagittal * item.weight * 1.6;
           var bodySagittal = Math.max(-item.maxSagittal, Math.min(
-            0.12, requestedSagittal));
+            0.08, requestedSagittal));
           var bodyLateral = Math.max(-item.maxLateral, Math.min(
-            item.maxLateral, lateral * item.weight * 2.4));
+            item.maxLateral, lateral * item.weight * 1.6));
           quaternion.setFromEuler(new THREE.Euler(
             bodySagittal,
             0,

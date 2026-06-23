@@ -327,28 +327,28 @@ class _LiveBody extends StatelessWidget {
 
     final cards = [
       _SideMetric(
-        label: 'Lumbar\nLordosis',
-        value: metrics['lumbarLordosis'] ?? 0,
-        warnAbove: 60,
-        icon: Icons.arrow_downward_rounded,
-      ),
-      _SideMetric(
-        label: 'Thoracic\nKyphosis',
-        value: metrics['thoracicKyphosis'] ?? 0,
-        warnAbove: 50,
-        icon: Icons.arrow_upward_rounded,
-      ),
-      _SideMetric(
-        label: 'Cervical\nLordosis',
+        label: 'Neck\nCurve',
         value: metrics['cervicalLordosis'] ?? 0,
         warnAbove: 40,
         icon: Icons.arrow_downward_rounded,
       ),
       _SideMetric(
-        label: 'Lateral\nDeviation',
+        label: 'Upper Back\nRounding',
+        value: metrics['thoracicKyphosis'] ?? 0,
+        warnAbove: 50,
+        icon: Icons.arrow_upward_rounded,
+      ),
+      _SideMetric(
+        label: 'Side\nTilting',
         value: metrics['lateralDeviation'] ?? 0,
         warnAbove: 10,
         icon: Icons.swap_horiz_rounded,
+      ),
+      _SideMetric(
+        label: 'Lower Back\nArch',
+        value: metrics['lumbarLordosis'] ?? 0,
+        warnAbove: 60,
+        icon: Icons.arrow_downward_rounded,
       ),
     ];
 
@@ -408,10 +408,12 @@ class _SideMetric extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isWarning = value > warnAbove;
+    final isGood = value < warnAbove * 0.6;
     final color = isWarning
         ? const Color(0xFFEF4444)
-        : Theme.of(context).colorScheme.primary;
-
+        : isGood
+            ? const Color(0xFF10B981)
+            : const Color(0xFFF59E0B);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
