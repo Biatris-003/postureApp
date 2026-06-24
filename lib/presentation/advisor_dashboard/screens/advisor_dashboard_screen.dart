@@ -21,6 +21,9 @@ class _AdvisorDashboardScreenState
     extends ConsumerState<AdvisorDashboardScreen> {
   int _currentIndex = 0;
   String? _clinicianLogicalId; // e.g. "c001" — matches notifications.clinicianId
+  
+  // ✅ GlobalKey to access AssignedMembersTabState
+  final GlobalKey<AssignedMembersTabState> _assignedMembersKey = GlobalKey();
 
   @override
   void initState() {
@@ -49,51 +52,43 @@ class _AdvisorDashboardScreenState
       _clinicianLogicalId = doc.data()['clinicianId'] as String? ?? doc.id;
     });
   }
-// @override
-// void initState() {
-//   super.initState();
-//   _resolveClinicianId();
-// }
 
-// Future<void> _resolveClinicianId() async {
-//   final appUser = ref.read(authStateProvider);
-//   debugPrint('🔴 BADGE DEBUG — appUser: $appUser');
-//   if (appUser == null) {
-//     debugPrint('🔴 BADGE DEBUG — STOPPED: appUser is null');
-//     return;
-//   }
-
-//   final query = await FirebaseFirestore.instance
-//       .collection('clinicians')
-//       .where('userId', isEqualTo: appUser.userId)
-//       .limit(1)
-//       .get();
-
-//   debugPrint('🔴 BADGE DEBUG — clinician docs found: ${query.docs.length}');
-//   if (query.docs.isEmpty) {
-//     debugPrint('🔴 BADGE DEBUG — STOPPED: no clinician doc for userId=${appUser.userId}');
-//     return;
-//   }
-
-//   final doc = query.docs.first;
-//   final resolvedId = doc.data()['clinicianId'] as String? ?? doc.id;
-//   debugPrint('🔴 BADGE DEBUG — resolved clinicianLogicalId: $resolvedId');
-
-//   if (!mounted) return;
-//   setState(() {
-//     _clinicianLogicalId = resolvedId;
-//   });
-// }
   Widget _getTab(int index) {
     switch (index) {
       case 0:
-        return const AssignedMembersTab();
+        return AssignedMembersTab(
+          key: _assignedMembersKey, // ✅ Pass the key
+          onNotificationsTap: () {
+            // Switch to notifications tab
+            setState(() {
+              _currentIndex = 1;
+            });
+          },
+        );
       case 1:
-        return const NotificationsTab();
+        return NotificationsTab(
+          onPendingRequestsTap: () {
+            // Switch to Assigned Members tab and show pending requests
+            setState(() {
+              _currentIndex = 0;
+            });
+            // Call showPendingRequests on the AssignedMembersTab
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              _assignedMembersKey.currentState?.showPendingRequests();
+            });
+          },
+        );
       case 2:
         return const AdvisorProfileTab();
       default:
-        return const AssignedMembersTab();
+        return AssignedMembersTab(
+          key: _assignedMembersKey,
+          onNotificationsTap: () {
+            setState(() {
+              _currentIndex = 1;
+            });
+          },
+        );
     }
   }
 
@@ -105,35 +100,42 @@ class _AdvisorDashboardScreenState
 
       // ── Bottom Navigation ─────────────────────────
       bottomNavigationBar: Container(
+        margin: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+        padding: const EdgeInsets.symmetric(
+          horizontal: 10,
+          vertical: 10,
+        ),
         decoration: BoxDecoration(
           color: Colors.white,
-          border: const Border(
-            top: BorderSide(color: AppColors.borderLight, width: 1),
-          ),
+          borderRadius: BorderRadius.circular(26),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 16,
-              offset: const Offset(0, -4),
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 18,
+              offset: const Offset(0, 6),
             ),
           ],
         ),
         child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildNavItem(0, Icons.people_outline, Icons.people, 'Patients'),
-                _buildNavItemWithLiveBadge(
-                  1,
-                  Icons.notifications_outlined,
-                  Icons.notifications,
-                  'Alerts',
-                ),
-                _buildNavItem(2, Icons.person_outline, Icons.person, 'Profile'),
-              ],
-            ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildNavItem(
+                index: 0,
+                icon: Icons.people_outline,
+                label: 'Patients',
+              ),
+              _buildNavItemWithRedDot(
+                index: 1,
+                icon: Icons.notifications_outlined,
+                label: 'Notifications',
+              ),
+              _buildNavItem(
+                index: 2,
+                icon: Icons.person_outline,
+                label: 'Profile',
+              ),
+            ],
           ),
         ),
       ),
@@ -142,8 +144,11 @@ class _AdvisorDashboardScreenState
 
   // ── Normal Nav Item ──────────────────────────────
 
-  Widget _buildNavItem(
-      int index, IconData icon, IconData activeIcon, String label) {
+  Widget _buildNavItem({
+    required int index,
+    required IconData icon,
+    required String label,
+  }) {
     final isSelected = _currentIndex == index;
 
     return GestureDetector(
@@ -152,53 +157,68 @@ class _AdvisorDashboardScreenState
         setState(() => _currentIndex = index);
       },
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 9),
+        duration: const Duration(milliseconds: 250),
+        padding: EdgeInsets.symmetric(
+          horizontal: isSelected ? 14 : 10,
+          vertical: 10,
+        ),
         decoration: BoxDecoration(
           color: isSelected
-              ? AppColors.primaryDeep.withValues(alpha: 0.10)
+              ? AppColors.primaryMid
               : Colors.transparent,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(30),
         ),
-        child: Column(
+        child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              isSelected ? activeIcon : icon,
-              color: isSelected ? AppColors.primaryDeep : AppColors.textSecondaryLight,
-              size: 23,
+              icon,
+              size: 24,
+              color: isSelected
+                  ? Colors.white
+                  : AppColors.textSecondaryLight,
             ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                color: isSelected ? AppColors.primaryDeep : AppColors.textSecondaryLight,
+            if (isSelected)
+              Padding(
+                padding: const EdgeInsets.only(left: 6),
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
               ),
-            ),
           ],
         ),
       ),
     );
   }
 
-  // ── Live Badge Nav Item (REAL-TIME) ─────────────
+  // ── Nav Item with RED DOT (like patient version) ─────────
 
-  Widget _buildNavItemWithLiveBadge(
-      int index, IconData icon, IconData activeIcon, String label) {
+  Widget _buildNavItemWithRedDot({
+    required int index,
+    required IconData icon,
+    required String label,
+  }) {
     final isSelected = _currentIndex == index;
 
-    // If clinicianId not resolved yet, show badge with 0 (no crash)
     if (_clinicianLogicalId == null) {
-      return _buildNavItem(index, icon, activeIcon, label);
+      return _buildNavItem(
+        index: index,
+        icon: icon,
+        label: label,
+      );
     }
 
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('notifications')
-          .where('clinicianId', isEqualTo: _clinicianLogicalId) // logical ID, matches doc field
-          .where('isRead', isEqualTo: false) // unread only
+          .where('recipientId', isEqualTo: _clinicianLogicalId)
+          .where('recipientType', isEqualTo: 'clinician')
+          .where('isRead', isEqualTo: false)
           .snapshots(),
       builder: (context, snapshot) {
         final count = snapshot.data?.docs.length ?? 0;
@@ -209,62 +229,58 @@ class _AdvisorDashboardScreenState
             setState(() => _currentIndex = index);
           },
           child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 9),
+            duration: const Duration(milliseconds: 250),
+            padding: EdgeInsets.symmetric(
+              horizontal: isSelected ? 14 : 10,
+              vertical: 10,
+            ),
             decoration: BoxDecoration(
               color: isSelected
-                  ? AppColors.primaryDeep.withValues(alpha: 0.10)
+                  ? AppColors.primaryMid
                   : Colors.transparent,
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(30),
             ),
-            child: Column(
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Stack(
                   clipBehavior: Clip.none,
                   children: [
                     Icon(
-                      isSelected ? activeIcon : icon,
+                      icon,
+                      size: 24,
                       color: isSelected
-                          ? AppColors.primaryDeep
+                          ? Colors.white
                           : AppColors.textSecondaryLight,
-                      size: 23,
                     ),
+                    // ✅ RED DOT only (no number)
                     if (count > 0)
                       Positioned(
-                        top: -4,
-                        right: -6,
+                        top: -2,
+                        right: -4,
                         child: Container(
-                          padding: const EdgeInsets.all(3),
-                          decoration: BoxDecoration(
+                          width: 10,
+                          height: 10,
+                          decoration: const BoxDecoration(
                             color: AppColors.danger,
                             shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 1.5),
-                          ),
-                          constraints:
-                              const BoxConstraints(minWidth: 16, minHeight: 16),
-                          child: Text(
-                            count > 9 ? '9+' : '$count',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w700,
-                            ),
-                            textAlign: TextAlign.center,
                           ),
                         ),
                       ),
                   ],
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                    color: isSelected ? AppColors.primaryDeep : AppColors.textSecondaryLight,
+                if (isSelected)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 6),
+                    child: Text(
+                      label,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
                   ),
-                ),
               ],
             ),
           ),

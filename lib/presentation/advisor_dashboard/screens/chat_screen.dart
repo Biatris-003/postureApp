@@ -365,11 +365,18 @@ final messages = snapshot.data!;
                 child: TextField(
                   controller: _messageController,
                   style: const TextStyle(color: AppColors.textPrimaryLight, fontSize: 14),
-                  decoration: InputDecoration(
+                  decoration: const InputDecoration(
                     hintText: 'Type a message...',
-                    hintStyle: const TextStyle(color: AppColors.textSecondaryLight),
+                    hintStyle: TextStyle(color: AppColors.textSecondaryLight),
+                    filled: false,
+                    isDense: true,
                     border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    disabledBorder: InputBorder.none,
+                    errorBorder: InputBorder.none,
+                    focusedErrorBorder: InputBorder.none,
+                    contentPadding: EdgeInsets.symmetric(vertical: 12),
                   ),
                   onSubmitted: (_) => _sendMessage(),
                 ),

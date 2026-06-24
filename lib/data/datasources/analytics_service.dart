@@ -53,28 +53,56 @@ class AnalyticsService {
 
   // ─── FETCH DATA ───────────────────────────────────────────────
 
-  Future<List<PostureClassification>> getTodayClassifications(
-    String patientId,
-  ) async {
-    final now = DateTime.now();
-    final todayMidnight = DateTime(
-      now.year,
-      now.month,
-      now.day,
-    ); // 00:00:00 today
-    final sinceTimestamp = Timestamp.fromDate(todayMidnight);
+Future<List<PostureClassification>> getTodayClassifications(
+  String patientId,
+) async {
+  final now = DateTime.now();
+  final todayMidnight = DateTime(now.year, now.month, now.day);
+  final sinceTimestamp = Timestamp.fromDate(todayMidnight);
 
-    final snapshot = await _db
-        .collection('postureClassifications')
-        .where('patientId', isEqualTo: patientId)
-        .where('timestamp', isGreaterThanOrEqualTo: sinceTimestamp)
-        .orderBy('timestamp')
-        .get();
+  final snapshot = await _db
+      .collection('postureClassifications')
+      .where('patientId', isEqualTo: patientId)
+      .where('timestamp', isGreaterThanOrEqualTo: sinceTimestamp)
+      .orderBy('timestamp')
+      .get();
 
-    return snapshot.docs
-        .map((doc) => PostureClassification.fromMap(doc.data(), doc.id))
-        .toList();
+  final classifications = snapshot.docs
+      .map((doc) => PostureClassification.fromMap(doc.data(), doc.id))
+      .toList();
+
+  // ✅ ADD THIS: fallback to statistics collection if no live readings
+  if (classifications.isNotEmpty) return classifications;
+
+  final dateKey =
+      '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+  final docId = '${patientId}_$dateKey';
+
+  final statDoc = await _db.collection('statistics').doc(docId).get();
+  if (!statDoc.exists) return [];
+
+  final data = statDoc.data()!;
+  final counts = data['counts'];
+  if (counts is! Map) return [];
+
+  final result = <PostureClassification>[];
+  for (final label in allLabels) {
+    final count = (counts[label] as num?)?.toInt() ?? 0;
+    for (var i = 0; i < count; i++) {
+      result.add(PostureClassification(
+        classificationId: '${docId}_${label}_$i',
+        readingId: '',
+        modelId: 'daily_statistics',
+        postureLabel: label,
+        confidenceScore: 1,
+        timestamp: todayMidnight.add(Duration(seconds: i)),
+        patientId: patientId,
+        sessionId: '',
+      ));
+    }
   }
+  return result;
+}
 
   Future<void> saveDailyStatistics(
     String patientId,

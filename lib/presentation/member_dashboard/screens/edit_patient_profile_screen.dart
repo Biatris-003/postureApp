@@ -5,84 +5,90 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../core/theme/app_theme.dart';
 
-class EditProfileScreen extends StatefulWidget {
-  final String clinicianId;
+class EditPatientProfileScreen extends StatefulWidget {
+  final String patientId;
   final String initialName;
-  final String initialSpecialty;
-  final String initialInstitution;
   final String initialEmail;
+  final String initialGender;
+  final String initialDateOfBirth;
+  final String initialLanguage;
   final String? initialImageBase64;
 
-  const EditProfileScreen({
+  const EditPatientProfileScreen({
     super.key,
-    required this.clinicianId,
+    required this.patientId,
     required this.initialName,
-    required this.initialSpecialty,
-    required this.initialInstitution,
     required this.initialEmail,
+    required this.initialGender,
+    required this.initialDateOfBirth,
+    required this.initialLanguage,
     this.initialImageBase64,
   });
 
   @override
-  State<EditProfileScreen> createState() => _EditProfileScreenState();
+  State<EditPatientProfileScreen> createState() => _EditPatientProfileScreenState();
 }
 
-class _EditProfileScreenState extends State<EditProfileScreen> {
+class _EditPatientProfileScreenState extends State<EditPatientProfileScreen> {
   late final TextEditingController _nameCtrl;
-  late final TextEditingController _specialtyCtrl;
-  late final TextEditingController _institutionCtrl;
-  late final TextEditingController _emailCtrl;
-
-  bool _isSaving = false;
+  late final TextEditingController _languageCtrl;
+  String? _gender;
+  DateTime? _dob;
   String? _imageBase64;
+  bool _isSaving = false;
 
-  static const _specialtyOptions = [
-    'General Practitioner',
-    'Cardiologist',
-    'Dermatologist',
-    'Neurologist',
-    'Orthopedic Surgeon',
-    'Pediatrician',
-    'Psychiatrist',
-    'Radiologist',
-    'Surgeon',
-    'Other',
-  ];
+  static const _genderOptions = ['Male', 'Female', 'Other'];
 
   @override
   void initState() {
     super.initState();
     _nameCtrl = TextEditingController(text: widget.initialName);
-    _specialtyCtrl = TextEditingController(text: widget.initialSpecialty);
-    _institutionCtrl = TextEditingController(text: widget.initialInstitution);
-    _emailCtrl = TextEditingController(text: widget.initialEmail);
+    _languageCtrl = TextEditingController(text: widget.initialLanguage);
+    _gender = _genderOptions.contains(widget.initialGender) ? widget.initialGender : null;
     _imageBase64 = widget.initialImageBase64;
+    if (widget.initialDateOfBirth.isNotEmpty) {
+      try {
+        _dob = DateTime.parse(widget.initialDateOfBirth);
+      } catch (_) {}
+    }
   }
 
   @override
   void dispose() {
     _nameCtrl.dispose();
-    _specialtyCtrl.dispose();
-    _institutionCtrl.dispose();
-    _emailCtrl.dispose();
+    _languageCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _pickImage() async {
     try {
       final picker = ImagePicker();
-      final picked = await picker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 70,
-      );
+      final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
       if (picked == null) return;
       final bytes = await picked.readAsBytes();
       setState(() => _imageBase64 = base64Encode(bytes));
     } catch (e) {
-      if (mounted) {
-        AppToast.show(context, message: 'Could not load image', isError: true);
-      }
+      if (mounted) AppToast.show(context, message: 'Could not load image', isError: true);
     }
+  }
+
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _dob ?? DateTime(now.year - 25),
+      firstDate: DateTime(1920),
+      lastDate: now,
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: Theme.of(context).colorScheme.copyWith(
+                primary: AppColors.primaryDeep,
+              ),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked != null) setState(() => _dob = picked);
   }
 
   Future<void> _save() async {
@@ -93,21 +99,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
     setState(() => _isSaving = true);
     try {
-      await FirebaseFirestore.instance
-          .collection('clinicians')
-          .doc(widget.clinicianId)
-          .update({
+      await FirebaseFirestore.instance.collection('patients').doc(widget.patientId).update({
         'fullName': _nameCtrl.text.trim(),
-        'specialty': _specialtyCtrl.text.trim(),
-        'institution': _institutionCtrl.text.trim(),
-        'contactEmail': _emailCtrl.text.trim(),
+        'gender': _gender ?? '',
+        'dateOfBirth': _dob != null ? _dob!.toIso8601String().split('T').first : '',
+        'preferredLanguage': _languageCtrl.text.trim(),
         if (_imageBase64 != null) 'profileImageBase64': _imageBase64,
       });
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
-      if (mounted) {
-        AppToast.show(context, message: 'Failed to save: $e', isError: true);
-      }
+      if (mounted) AppToast.show(context, message: 'Failed to save: $e', isError: true);
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -126,19 +127,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         backgroundColor: Colors.white,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new,
-            color: AppColors.primaryDeep,
-            size: 18,
-          ),
+          icon: const Icon(Icons.arrow_back_ios_new, color: AppColors.primaryDeep, size: 18),
           onPressed: () => Navigator.pop(context),
         ),
         title: const Text(
           'Edit Profile',
-          style: TextStyle(
-            color: AppColors.textPrimaryLight,
-            fontWeight: FontWeight.w700,
-          ),
+          style: TextStyle(color: AppColors.textPrimaryLight, fontWeight: FontWeight.w700),
         ),
         centerTitle: true,
       ),
@@ -158,10 +152,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         color: AppColors.primaryDeep.withValues(alpha: 0.10),
-                        border: Border.all(
-                          color: AppColors.primaryDeep.withValues(alpha: 0.20),
-                          width: 2,
-                        ),
+                        border: Border.all(color: AppColors.primaryDeep.withValues(alpha: 0.20), width: 2),
                       ),
                       clipBehavior: Clip.antiAlias,
                       child: _imageBase64 != null
@@ -192,11 +183,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                           shape: BoxShape.circle,
                           border: Border.all(color: Colors.white, width: 2),
                         ),
-                        child: const Icon(
-                          Icons.camera_alt_outlined,
-                          color: Colors.white,
-                          size: 15,
-                        ),
+                        child: const Icon(Icons.camera_alt_outlined, color: Colors.white, size: 15),
                       ),
                     ),
                   ],
@@ -221,10 +208,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     label: 'Email',
                     child: Container(
                       width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 14,
-                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
                       decoration: BoxDecoration(
                         color: AppColors.surfaceLight,
                         borderRadius: BorderRadius.circular(12),
@@ -232,61 +216,62 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       ),
                       child: Text(
                         widget.initialEmail.isEmpty ? '—' : widget.initialEmail,
-                        style: const TextStyle(
-                          color: AppColors.textSecondaryLight,
-                          fontSize: 14,
+                        style: const TextStyle(color: AppColors.textSecondaryLight, fontSize: 14),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  _labeledField(
+                    label: 'Gender',
+                    child: DropdownButtonFormField<String>(
+                      initialValue: _gender,
+                      decoration: _inputDecoration('Select gender'),
+                      items: _genderOptions
+                          .map((g) => DropdownMenuItem(value: g, child: Text(g)))
+                          .toList(),
+                      onChanged: (val) => setState(() => _gender = val),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  _labeledField(
+                    label: 'Date of Birth',
+                    child: GestureDetector(
+                      onTap: _pickDate,
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.borderLight),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.calendar_today_outlined,
+                                size: 17, color: AppColors.primaryDeep),
+                            const SizedBox(width: 10),
+                            Text(
+                              _dob != null
+                                  ? '${_dob!.day}/${_dob!.month}/${_dob!.year}'
+                                  : 'Select date',
+                              style: TextStyle(
+                                color: _dob != null
+                                    ? AppColors.textPrimaryLight
+                                    : AppColors.textSecondaryLight,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
                   ),
                   const SizedBox(height: 18),
                   _labeledField(
-                    label: 'Specialty',
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 14,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.surfaceLight,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.borderLight),
-                      ),
-                      child: Text(
-                        _specialtyCtrl.text.trim().isEmpty
-                            ? '—'
-                            : _specialtyCtrl.text.trim(),
-                        style: const TextStyle(
-                          color: AppColors.textSecondaryLight,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  _labeledField(
-                    label: 'Institution',
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 14,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.surfaceLight,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.borderLight),
-                      ),
-                      child: Text(
-                        _institutionCtrl.text.trim().isEmpty
-                            ? '—'
-                            : _institutionCtrl.text.trim(),
-                        style: const TextStyle(
-                          color: AppColors.textSecondaryLight,
-                          fontSize: 14,
-                        ),
-                      ),
+                    label: 'Preferred Language',
+                    child: TextField(
+                      controller: _languageCtrl,
+                      decoration: _inputDecoration('e.g. English, Arabic'),
                     ),
                   ),
                 ],
@@ -303,27 +288,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   backgroundColor: AppColors.primaryDeep,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14),
-                  ),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   elevation: 0,
                 ),
                 child: _isSaving
                     ? const SizedBox(
                         width: 20,
                         height: 20,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2.5,
-                        ),
+                        child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
                       )
-                    : const Text(
-                        'Save Changes',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          fontSize: 15,
-                        ),
-                      ),
+                    : const Text('Save Changes',
+                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
               ),
             ),
           ],
@@ -372,16 +347,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   InputDecoration _inputDecoration(String hint) {
     return InputDecoration(
       hintText: hint,
-      hintStyle: const TextStyle(
-        color: AppColors.textSecondaryLight,
-        fontSize: 14,
-      ),
+      hintStyle: const TextStyle(color: AppColors.textSecondaryLight, fontSize: 14),
       filled: true,
       fillColor: Colors.white,
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: 14,
-        vertical: 14,
-      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: const BorderSide(color: AppColors.borderLight),

@@ -8,7 +8,12 @@ import '../screens/member_details_screen.dart';
 import '../screens/chat_screen.dart';
 
 class NotificationsTab extends ConsumerStatefulWidget {
-  const NotificationsTab({super.key});
+  final VoidCallback? onPendingRequestsTap;
+
+  const NotificationsTab({
+    super.key,
+    this.onPendingRequestsTap,
+  });
 
   @override
   ConsumerState<NotificationsTab> createState() => _NotificationsTabState();
@@ -17,7 +22,8 @@ class NotificationsTab extends ConsumerStatefulWidget {
 class _NotificationsTabState extends ConsumerState<NotificationsTab> {
   List<Map<String, dynamic>> _notifications = [];
   bool _isLoading = true;
-  String? _clinicianId;   // logical ID e.g. "c001"
+  String? _clinicianId;
+  String? _clinicianDocId;
   bool _showUnreadOnly = false;
 
   final _typeConfig = {
@@ -36,10 +42,25 @@ class _NotificationsTabState extends ConsumerState<NotificationsTab> {
       'accentColor': const Color(0xFF1E88E5),
       'label': 'Patient Message',
     },
+    'doctor_message': {
+      'icon': Icons.mail_outline,
+      'accentColor': const Color(0xFF1E88E5),
+      'label': 'Doctor Message',
+    },
     'join_request': {
       'icon': Icons.person_add_outlined,
       'accentColor': const Color(0xFF7E57C2),
       'label': 'Join Request',
+    },
+    'join_response': {
+      'icon': Icons.check_circle_outline,
+      'accentColor': const Color(0xFF4CAF50),
+      'label': 'Request Response',
+    },
+    'bad_posture_streak': {
+      'icon': Icons.warning_amber_outlined,
+      'accentColor': const Color(0xFFE08A00),
+      'label': 'Posture Alert',
     },
   };
 
@@ -53,7 +74,10 @@ class _NotificationsTabState extends ConsumerState<NotificationsTab> {
     setState(() => _isLoading = true);
     try {
       final appUser = ref.read(authStateProvider);
-      if (appUser == null) { setState(() => _isLoading = false); return; }
+      if (appUser == null) {
+        setState(() => _isLoading = false);
+        return;
+      }
 
       final query = await FirebaseFirestore.instance
           .collection('clinicians')
@@ -61,99 +85,50 @@ class _NotificationsTabState extends ConsumerState<NotificationsTab> {
           .limit(1)
           .get();
 
-      if (query.docs.isEmpty) { setState(() => _isLoading = false); return; }
+      if (query.docs.isEmpty) {
+        setState(() => _isLoading = false);
+        return;
+      }
 
-      _clinicianId = query.docs.first.data()['clinicianId'] as String?
-          ?? query.docs.first.id;
+      _clinicianDocId = query.docs.first.id;
+      _clinicianId = query.docs.first.data()['clinicianId'] as String? ?? query.docs.first.id;
 
-      await _seedNotificationsIfEmpty();
+      print('====================');
+      print('CLINICIAN DOC ID = $_clinicianDocId');
+      print('CLINICIAN LOGICAL ID = $_clinicianId');
+      print('====================');
+
       await _loadNotifications();
     } catch (e) {
+      print('❌ Error in _resolveClinicianAndLoad: $e');
       setState(() => _isLoading = false);
     }
   }
 
-  Future<void> _seedNotificationsIfEmpty() async {
-    if (_clinicianId == null) return;
-    final existing = await FirebaseFirestore.instance
-        .collection('notifications')
-        .where('clinicianId', isEqualTo: _clinicianId)
-        .where('type', whereIn: ['exercise_assigned', 'report_generated', 'patient_message'])
-        .get();
-    if (existing.docs.isNotEmpty) return;
-
-    // Get a real patient to seed with
-    final clinicianDocQuery = await FirebaseFirestore.instance
-        .collection('clinicians')
-        .where('clinicianId', isEqualTo: _clinicianId)
-        .limit(1)
-        .get();
-    final clinicianDocId = clinicianDocQuery.docs.isNotEmpty
-        ? clinicianDocQuery.docs.first.id
-        : '';
-
-    final patientsSnapshot = await FirebaseFirestore.instance
-        .collection('patients')
-        .where('clinicianId', isEqualTo: clinicianDocId)
-        .limit(1)
-        .get();
-
-    String patientId = 'p001';
-    String patientName = 'Sara Ahmed';
-    if (patientsSnapshot.docs.isNotEmpty) {
-      final doc = patientsSnapshot.docs.first;
-      patientId = doc.data()['patientId'] ?? doc.id;
-      patientName = doc.data()['fullName'] ?? 'Sara Ahmed';
-    }
-
-    final now = DateTime.now();
-    final seeds = [
-      {
-        'clinicianId': _clinicianId,
-        'patientId': patientId,
-        'patientName': patientName,
-        'type': 'exercise_assigned',
-        'title': 'Exercises Assigned',
-        'message': 'New exercises have been assigned for $patientName.',
-        'timestamp': now.subtract(const Duration(minutes: 15)).toIso8601String(),
-        'isRead': false,
-      },
-      {
-        'clinicianId': _clinicianId,
-        'patientId': patientId,
-        'patientName': patientName,
-        'type': 'report_generated',
-        'title': 'Report Generated',
-        'message': 'A new posture report has been generated for $patientName.',
-        'timestamp': now.subtract(const Duration(hours: 1)).toIso8601String(),
-        'isRead': false,
-      },
-      {
-        'clinicianId': _clinicianId,
-        'patientId': patientId,
-        'patientName': patientName,
-        'type': 'patient_message',
-        'title': 'New Message',
-        'message': '$patientName sent you a message.',
-        'timestamp': now.subtract(const Duration(hours: 3)).toIso8601String(),
-        'isRead': true,
-      },
-    ];
-
-    for (final n in seeds) {
-      await FirebaseFirestore.instance.collection('notifications').add(n);
-    }
-  }
-
   Future<void> _loadNotifications() async {
-    if (_clinicianId == null) return;
+    if (_clinicianId == null) {
+      print('⚠️ _clinicianId is null');
+      return;
+    }
+
+    print('====================');
+    print('LOADING NOTIFICATIONS');
+    print('_clinicianId = $_clinicianId');
+    print('====================');
+
     setState(() => _isLoading = true);
+
     try {
+      // ✅ Query using recipientId + recipientType
       final snapshot = await FirebaseFirestore.instance
           .collection('notifications')
-          .where('clinicianId', isEqualTo: _clinicianId)
+          .where('recipientId', isEqualTo: _clinicianId)
+          .where('recipientType', isEqualTo: 'clinician')
           .orderBy('timestamp', descending: true)
           .get();
+
+      print('FOUND DOCS = ${snapshot.docs.length}');
+
       setState(() {
         _notifications = snapshot.docs
             .map((doc) => {...doc.data(), 'id': doc.id})
@@ -161,7 +136,10 @@ class _NotificationsTabState extends ConsumerState<NotificationsTab> {
         _isLoading = false;
       });
     } catch (e) {
-      setState(() => _isLoading = false);
+      print('❌ ERROR loading notifications: $e');
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
@@ -170,7 +148,7 @@ class _NotificationsTabState extends ConsumerState<NotificationsTab> {
         .collection('notifications')
         .doc(id)
         .update({'isRead': true});
-    // Update locally without full reload for instant UI feedback
+
     setState(() {
       final idx = _notifications.indexWhere((n) => n['id'] == id);
       if (idx != -1) _notifications[idx]['isRead'] = true;
@@ -198,16 +176,13 @@ class _NotificationsTabState extends ConsumerState<NotificationsTab> {
     setState(() => _notifications.removeWhere((n) => n['id'] == id));
   }
 
-  // ── Deep navigation ────────────────────────────────────────
-
   Future<void> _handleTap(Map<String, dynamic> notification) async {
-    // Mark as read first
     if (notification['isRead'] == false) {
       await _markAsRead(notification['id']);
     }
 
     final type = notification['type'] ?? '';
-    final patientId = notification['patientId'] ?? '';
+    final patientId = notification['senderId'] ?? notification['patientId'] ?? '';
     final patientName = notification['patientName'] ?? 'Patient';
 
     if (!mounted) return;
@@ -216,43 +191,39 @@ class _NotificationsTabState extends ConsumerState<NotificationsTab> {
       case 'exercise_assigned':
         await _navigateToPatientTab(patientId, patientName, tabIndex: 1);
         break;
-
       case 'report_generated':
         await _navigateToPatientTab(patientId, patientName, tabIndex: 2);
         break;
-
       case 'patient_message':
+      case 'doctor_message':
         await _navigateToChat(patientId, patientName);
         break;
-
       case 'join_request':
-        // Not implemented yet — show a snackbar
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Join request management coming soon.'),
-            ),
-          );
-        }
+        widget.onPendingRequestsTap?.call();
+        break;
+      case 'join_response':
+        // Just show the status, no navigation needed
         break;
     }
   }
 
   Future<void> _navigateToPatientTab(
-      String patientId, String patientName, {required int tabIndex}) async {
-    // Fetch full patient data so we can build AssignedMember properly
+    String patientId,
+    String patientName, {
+    required int tabIndex,
+  }) async {
     Map<String, dynamic>? patientData;
+
     try {
-      // Try by logical patientId field first
       final q = await FirebaseFirestore.instance
           .collection('patients')
           .where('patientId', isEqualTo: patientId)
           .limit(1)
           .get();
+
       if (q.docs.isNotEmpty) {
         patientData = {...q.docs.first.data(), 'id': q.docs.first.id};
       } else {
-        // Fallback: try by Firestore doc ID
         final doc = await FirebaseFirestore.instance
             .collection('patients')
             .doc(patientId)
@@ -270,12 +241,13 @@ class _NotificationsTabState extends ConsumerState<NotificationsTab> {
     );
 
     if (!mounted) return;
+
     await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => MemberDetailsScreen(
           member: member,
-          initialTabIndex: tabIndex, // ← pass the tab to open
+          initialTabIndex: tabIndex,
         ),
       ),
     );
@@ -284,10 +256,10 @@ class _NotificationsTabState extends ConsumerState<NotificationsTab> {
   Future<void> _navigateToChat(String patientId, String patientName) async {
     if (_clinicianId == null) return;
 
-    // chatId convention: c001_p001
     final chatId = '${_clinicianId}_$patientId';
 
     if (!mounted) return;
+
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -299,18 +271,17 @@ class _NotificationsTabState extends ConsumerState<NotificationsTab> {
       ),
     );
 
-    // After returning from chat, mark all patient_message notifications
-    // for this patient as read (they saw the conversation)
-    final toMark = _notifications.where((n) =>
-        n['type'] == 'patient_message' &&
-        n['patientId'] == patientId &&
-        n['isRead'] == false).toList();
+    final toMark = _notifications
+        .where((n) =>
+            (n['type'] == 'patient_message' || n['type'] == 'doctor_message') &&
+            (n['senderId'] == patientId || n['patientId'] == patientId) &&
+            n['isRead'] == false)
+        .toList();
+
     for (final n in toMark) {
       await _markAsRead(n['id']);
     }
   }
-
-  // ── Helpers ────────────────────────────────────────────────
 
   String _timeAgo(String timestamp) {
     try {
@@ -321,7 +292,9 @@ class _NotificationsTabState extends ConsumerState<NotificationsTab> {
       if (diff.inHours < 24) return '${diff.inHours}h ago';
       if (diff.inDays < 7) return '${diff.inDays}d ago';
       return '${dt.day}/${dt.month}/${dt.year}';
-    } catch (_) { return ''; }
+    } catch (_) {
+      return '';
+    }
   }
 
   String _dateGroup(String timestamp) {
@@ -331,26 +304,27 @@ class _NotificationsTabState extends ConsumerState<NotificationsTab> {
       final today = DateTime(now.year, now.month, now.day);
       final nDay = DateTime(dt.year, dt.month, dt.day);
       final diff = today.difference(nDay).inDays;
+
       if (diff == 0) return 'Today, ${_fmtDate(dt)}';
       if (diff == 1) return 'Yesterday, ${_fmtDate(dt)}';
       return _fmtDate(dt);
-    } catch (_) { return ''; }
+    } catch (_) {
+      return '';
+    }
   }
 
   String _fmtDate(DateTime dt) {
-    const months = ['','Jan','Feb','Mar','Apr','May','Jun',
-                    'Jul','Aug','Sep','Oct','Nov','Dec'];
+    const months = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return '${dt.day} ${months[dt.month]} ${dt.year.toString().substring(2)}';
   }
 
-  int get _unreadCount =>
-      _notifications.where((n) => n['isRead'] == false).length;
+  int get _unreadCount => _notifications.where((n) => n['isRead'] == false).length;
 
-  List<Map<String, dynamic>> get _filtered => _showUnreadOnly
-      ? _notifications.where((n) => n['isRead'] == false).toList()
-      : _notifications;
-
-  // ── Build ──────────────────────────────────────────────────
+  List<Map<String, dynamic>> get _filtered =>
+      _showUnreadOnly
+          ? _notifications.where((n) => n['isRead'] == false).toList()
+          : _notifications;
 
   @override
   Widget build(BuildContext context) {
@@ -369,8 +343,6 @@ class _NotificationsTabState extends ConsumerState<NotificationsTab> {
           color: AppColors.primaryDeep,
           child: CustomScrollView(
             slivers: [
-
-              // Nav bar
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(4, 12, 16, 0),
@@ -392,8 +364,11 @@ class _NotificationsTabState extends ConsumerState<NotificationsTab> {
                         IconButton(
                           onPressed: _markAllAsRead,
                           tooltip: 'Mark all as read',
-                          icon: const Icon(Icons.done_all,
-                              color: AppColors.primaryDeep, size: 22),
+                          icon: const Icon(
+                            Icons.done_all,
+                            color: AppColors.primaryDeep,
+                            size: 22,
+                          ),
                         )
                       else
                         const SizedBox(width: 48),
@@ -401,8 +376,6 @@ class _NotificationsTabState extends ConsumerState<NotificationsTab> {
                   ),
                 ),
               ),
-
-              // Tabs
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 18, 20, 6),
@@ -421,10 +394,9 @@ class _NotificationsTabState extends ConsumerState<NotificationsTab> {
                     ),
                     child: Row(
                       children: [
-                        _pillTab('All', !_showUnreadOnly,
-                            () => setState(() => _showUnreadOnly = false)),
+                        _pillTab('All', !_showUnreadOnly, () => setState(() => _showUnreadOnly = false)),
                         _pillTab(
-                          _unreadCount > 0 ? 'Unread  $_unreadCount' : 'Unread',
+                          _unreadCount > 0 ? 'Unread $_unreadCount' : 'Unread',
                           _showUnreadOnly,
                           () => setState(() => _showUnreadOnly = true),
                         ),
@@ -433,37 +405,34 @@ class _NotificationsTabState extends ConsumerState<NotificationsTab> {
                   ),
                 ),
               ),
-
-              // Loading
               if (_isLoading)
                 const SliverFillRemaining(
-                  child: Center(child: CircularProgressIndicator(
-                      color: AppColors.primaryDeep)),
+                  child: Center(child: CircularProgressIndicator(color: AppColors.primaryDeep)),
                 )
-
-              // Empty
               else if (_filtered.isEmpty)
                 SliverFillRemaining(
                   child: Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.notifications_none,
-                            size: 56,
-                            color: AppColors.primaryDeep.withValues(alpha: 0.25)),
+                        Icon(
+                          Icons.notifications_none,
+                          size: 56,
+                          color: AppColors.primaryDeep.withValues(alpha: 0.25),
+                        ),
                         const SizedBox(height: 12),
-                        const Text('No notifications here',
-                            style: TextStyle(
-                              color: AppColors.textSecondaryLight,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w500,
-                            )),
+                        const Text(
+                          'No notifications here',
+                          style: TextStyle(
+                            color: AppColors.textSecondaryLight,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
                       ],
                     ),
                   ),
                 )
-
-              // List
               else
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(16, 10, 16, 100),
@@ -477,14 +446,19 @@ class _NotificationsTabState extends ConsumerState<NotificationsTab> {
                           children: [
                             Padding(
                               padding: const EdgeInsets.only(
-                                  top: 16, bottom: 10, left: 4),
-                              child: Text(group,
-                                  style: const TextStyle(
-                                    fontSize: 12.5,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.textSecondaryLight,
-                                    letterSpacing: 0.3,
-                                  )),
+                                top: 16,
+                                bottom: 10,
+                                left: 4,
+                              ),
+                              child: Text(
+                                group,
+                                style: const TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.textSecondaryLight,
+                                  letterSpacing: 0.3,
+                                ),
+                              ),
                             ),
                             ...items.map((n) => _buildCard(n)),
                           ],
@@ -533,6 +507,7 @@ class _NotificationsTabState extends ConsumerState<NotificationsTab> {
       'accentColor': const Color(0xFF7E57C2),
       'label': 'Notification',
     };
+
     final isRead = notification['isRead'] == true;
     final accentColor = config['accentColor'] as Color;
     final icon = config['icon'] as IconData;
@@ -575,14 +550,9 @@ class _NotificationsTabState extends ConsumerState<NotificationsTab> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-
-                  // Accent bar
                   Container(width: 4, color: accentColor),
-
-                  // Icon
                   Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 16),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
                     child: Container(
                       width: 40,
                       height: 40,
@@ -593,13 +563,12 @@ class _NotificationsTabState extends ConsumerState<NotificationsTab> {
                       child: Icon(icon, color: accentColor, size: 20),
                     ),
                   ),
-
-                  // Text
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(0, 14, 14, 14),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -609,9 +578,7 @@ class _NotificationsTabState extends ConsumerState<NotificationsTab> {
                                   title,
                                   style: TextStyle(
                                     fontSize: 14,
-                                    fontWeight: isRead
-                                        ? FontWeight.w600
-                                        : FontWeight.w700,
+                                    fontWeight: isRead ? FontWeight.w600 : FontWeight.w700,
                                     color: AppColors.textPrimaryLight,
                                   ),
                                   maxLines: 1,
@@ -619,11 +586,13 @@ class _NotificationsTabState extends ConsumerState<NotificationsTab> {
                                 ),
                               ),
                               const SizedBox(width: 8),
-                              Text(time,
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    color: AppColors.textSecondaryLight,
-                                  )),
+                              Text(
+                                time,
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: AppColors.textSecondaryLight,
+                                ),
+                              ),
                             ],
                           ),
                           const SizedBox(height: 4),
@@ -636,11 +605,10 @@ class _NotificationsTabState extends ConsumerState<NotificationsTab> {
                                     fontSize: 12.5,
                                     color: isRead
                                         ? AppColors.textSecondaryLight
-                                        : AppColors.textPrimaryLight
-                                            .withValues(alpha: 0.75),
+                                        : AppColors.textPrimaryLight.withValues(alpha: 0.75),
                                     height: 1.4,
                                   ),
-                                  maxLines: 1,
+                                  maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/theme/app_theme.dart';
 import 'data/datasources/auth_service_mock.dart';
 import 'presentation/auth/screens/welcome_screen.dart';
+import 'presentation/auth/screens/auth_screen.dart';
 import 'presentation/member_dashboard/screens/member_dashboard_screen.dart';
 import 'presentation/advisor_dashboard/screens/advisor_dashboard_screen.dart';
 import 'providers/user_settings_provider.dart';
@@ -21,7 +22,6 @@ final bypassErrorProvider = NotifierProvider<BypassNotifier, bool>(BypassNotifie
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // await dotenv.load(fileName: '.env');
 
   try {
     await dotenv.load(fileName: '.env');
@@ -37,16 +37,14 @@ void main() async {
   String? errorMessage;
 
   try {
-    // Attempting to initialize Firebase with the provided options.
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
-firebaseInitialized = true;
+    firebaseInitialized = true;
   } catch (e) {
     debugPrint('Firebase initialization failed: $e');
     errorMessage = e.toString();
   }
-  
 
   runApp(ProviderScope(
     overrides: [
@@ -64,7 +62,6 @@ class SmartPostureApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final authState = ref.watch(authStateProvider);
     final settingsAsync = ref.watch(userSettingsProvider);
     final darkMode = settingsAsync.when(
       data: (s) => s.darkModeOverride,
@@ -78,11 +75,8 @@ class SmartPostureApp extends ConsumerWidget {
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: darkMode ? ThemeMode.dark : ThemeMode.system,
-      home: authState == null
-          ? const WelcomeScreen()
-          : (authState.role == 'Advisor'
-              ? const AdvisorDashboardScreen()
-              : const MemberDashboardScreen()),
+      // ✅ Always start with WelcomeScreen
+      home: const WelcomeScreen(),
     );
   }
 }

@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:convert';
 import '../../../data/datasources/auth_service_mock.dart';
+import '../../../core/theme/app_theme.dart';
 import 'settings_tab.dart';
+import 'edit_patient_profile_screen.dart';
+import '../../advisor_dashboard/screens/privacy_data_screen.dart';
+import '../../auth/screens/auth_screen.dart';
 
 class ProfileTab extends ConsumerStatefulWidget {
   const ProfileTab({super.key});
@@ -66,324 +71,425 @@ class _ProfileTabState extends ConsumerState<ProfileTab> {
     }
   }
 
+  Future<void> _openEditProfile(
+    String name,
+    String email,
+    String gender,
+    String dob,
+    String language,
+  ) async {
+    if (_patientId == null) return;
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EditPatientProfileScreen(
+          patientId: _patientId!,
+          initialName: name,
+          initialEmail: email,
+          initialGender: gender,
+          initialDateOfBirth: dob,
+          initialLanguage: language,
+          initialImageBase64: _patientData?['profileImageBase64'],
+        ),
+      ),
+    );
+    if (result == true) {
+      await _loadPatientData();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Profile updated successfully'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    }
+  }
+
+  void _openPrivacy() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const PrivacyDataScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (_isLoading) return const _PatientProfileSkeleton();
 
     if (_patientId == null) {
-      return const Scaffold(
+      return Scaffold(
+        backgroundColor: AppColors.surfaceLight,
         body: Center(
-          child: Text(
-            'Could not load profile.\nPlease log in again.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey),
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.person_off_outlined, size: 48, color: Colors.grey.shade400),
+                const SizedBox(height: 12),
+                const Text(
+                  'Could not load profile.\nPlease log in again.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppColors.textSecondaryLight),
+                ),
+              ],
+            ),
           ),
         ),
       );
     }
 
-    // ── Read real data from patients table ──
-    final name = _patientData?['fullName'] ?? 'Unknown';
-    final email = _patientData?['contactEmail'] ?? '';
-    final gender = _patientData?['gender'] ?? '';
-    final dob = _patientData?['dateOfBirth'] ?? '';
-    final language = _patientData?['preferredLanguage'] ?? '';
-    final initials = name.split(' ').map((e) => e[0]).take(2).join();
+    final name = _patientData?['fullName'] as String? ?? 'Unknown';
+    final email = _patientData?['contactEmail'] as String? ?? '';
+    final gender = _patientData?['gender'] as String? ?? '';
+    final dob = _patientData?['dateOfBirth'] as String? ?? '';
+    final language = _patientData?['preferredLanguage'] as String? ?? '';
+    final initials = name.split(' ').where((e) => e.isNotEmpty).map((e) => e[0]).take(2).join();
+    final image = _patientData?['profileImageBase64'] as String?;
 
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            expandedHeight: 280,
-            pinned: true,
-            flexibleSpace: FlexibleSpaceBar(
-              background: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      Theme.of(context).primaryColor,
-                      Theme.of(context).colorScheme.secondary
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                ),
+      backgroundColor: AppColors.surfaceLight,
+      body: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildHeaderBlock(
+              name: name,
+              initials: initials,
+              image: image,
+              email: email,
+              onEdit: () => _openEditProfile(name, email, gender, dob, language),
+            ),
+            // Pulls the content block up to close the gap left by the
+            // floating card's overlap (Transform doesn't shrink reserved
+            // space, so without this the gap below the card = cardOverlap).
+            Transform.translate(
+              offset: const Offset(0, -84), // cardOverlap (100) minus desired gap (16)
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    _sectionLabel('Personal Information'),
+                    const SizedBox(height: 10),
+                    _buildInfoCard(gender, dob, language),
+                    const SizedBox(height: 24),
+                    _sectionLabel('Hardware Connections'),
+                    const SizedBox(height: 10),
+                    _buildHardwareCard(),
+                    const SizedBox(height: 24),
+                    _sectionLabel('Account Settings'),
+                    const SizedBox(height: 10),
+                    _buildSettingsGroup(),
                     const SizedBox(height: 40),
-                    // ── Avatar with initials (no hardcoded asset) ──
-                    Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                      ),
-                      child: CircleAvatar(
-                        radius: 55,
-                        backgroundColor: Theme.of(context).primaryColor.withOpacity(0.2),
-                        child: Text(
-                          initials,
-                          style: TextStyle(
-                            fontSize: 32,
-                            fontWeight: FontWeight.bold,
-                            color: Theme.of(context).primaryColor,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      name,
-                      style: const TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Premium Member',
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.white.withOpacity(0.9),
-                        letterSpacing: 1.2,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
                   ],
                 ),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Top background block + floating profile card ─────────────────────
+
+  Widget _buildHeaderBlock({
+    required String name,
+    required String initials,
+    required String? image,
+    required String email,
+    required VoidCallback onEdit,
+  }) {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final bgHeight = screenHeight * 0.26;
+    const cardOverlap = 120.0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // ── Solid background panel — rounded bottom corners only ──
+        Container(
+          height: bgHeight,
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [AppColors.primaryDeep, AppColors.primaryMid],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+            borderRadius: BorderRadius.only(
+              bottomLeft: Radius.circular(32),
+              bottomRight: Radius.circular(32),
+            ),
           ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.all(24.0),
+          child: SafeArea(
+            bottom: false,
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: Padding(
+                padding: const EdgeInsets.only(left: 12, top: 4),
+              ),
+            ),
+          ),
+        ),
+        // ── Floating profile card, pulled up to overlap the panel ──
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Transform.translate(
+            offset: const Offset(0, -cardOverlap),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.12),
+                    blurRadius: 24,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _buildDailyGoalCard(context),
-                  const SizedBox(height: 32),
-                  Text('Personal Information',
-                      style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Theme.of(context).colorScheme.onSurface)),
+                  // Avatar
+                  Container(
+                    width: 96,
+                    height: 96,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: AppColors.primaryDeep.withValues(alpha: 0.10),
+                      border: Border.all(color: AppColors.borderLight, width: 1),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: image != null
+                        ? Image.memory(
+                            base64Decode(image),
+                            fit: BoxFit.cover,
+                            filterQuality: FilterQuality.high,
+                          )
+                        : Center(
+                            child: Text(
+                              initials.isEmpty ? '?' : initials,
+                              style: const TextStyle(
+                                fontSize: 30,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.primaryDeep,
+                              ),
+                            ),
+                          ),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Name
+                  Text(
+                    name,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 19,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimaryLight,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+
+                  // Role subtitle
+                  const Text(
+                    'Patient',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.textSecondaryLight,
+                    ),
+                  ),
                   const SizedBox(height: 16),
-                  _buildInfoCard(context, email, gender, dob, language),
-                  const SizedBox(height: 32),
-                  Text('Hardware Connections',
-                      style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Theme.of(context).colorScheme.onSurface)),
+
+                  // Action pill — "Edit Profile" in place of "Connect"
+                  GestureDetector(
+                    onTap: onEdit,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 10),
+                      decoration: const ShapeDecoration(
+                        color: AppColors.primaryDeep,
+                        shape: StadiumBorder(),
+                      ),
+                      child: const Text(
+                        'Edit Profile',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 16),
-                  _buildHardwareCard(context),
-                  const SizedBox(height: 32),
-                  Text('Account Settings',
-                      style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Theme.of(context).colorScheme.onSurface)),
-                  const SizedBox(height: 16),
-                  _buildSettingsGroup(context, ref),
-                  const SizedBox(height: 40),
+
+                  // Description block
+                  Text(
+                    email.isEmpty
+                        ? 'Tracking posture and mobility progress with Smart Posture Monitoring System.'
+                        : email,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w400,
+                      color: AppColors.textSecondaryLight,
+                      height: 1.5,
+                    ),
+                  ),
                 ],
               ),
             ),
           ),
+        ),
+      ],
+    );
+  }
+
+  // ── Section label ────────────────────────────────────────
+
+  Widget _sectionLabel(String text) => Text(
+        text.toUpperCase(),
+        style: const TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: AppColors.textSecondaryLight,
+          letterSpacing: 0.6,
+        ),
+      );
+
+  // ── Shared card wrapper ───────────────────────────────────
+
+  Widget _card({required Widget child, EdgeInsetsGeometry? padding}) {
+    return Container(
+      padding: padding ?? const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: AppColors.cardLight,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          ),
         ],
       ),
+      child: child,
     );
   }
 
   // ── Personal Info Card ────────────────────────────────────
-  Widget _buildInfoCard(BuildContext context, String email, String gender,
-      String dob, String language) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-              color: Theme.of(context).shadowColor.withOpacity(0.05),
-              blurRadius: 15,
-              offset: const Offset(0, 5)),
-        ],
-      ),
+  // Email now lives in the profile card's description block above, so it's
+  // dropped here to avoid showing the same value twice.
+
+  Widget _buildInfoCard(String gender, String dob, String language) {
+    return _card(
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 20),
       child: Column(
         children: [
-          _buildInfoRow(context, Icons.email_outlined, 'Email', email),
-          const Divider(height: 1),
-          _buildInfoRow(context, Icons.wc_outlined, 'Gender', gender),
-          const Divider(height: 1),
-          _buildInfoRow(context, Icons.cake_outlined, 'Date of Birth', dob),
-          const Divider(height: 1),
-          _buildInfoRow(context, Icons.language_outlined, 'Language', language),
+          _buildInfoRow(Icons.wc_outlined, 'Gender', gender),
+          const Divider(height: 1, color: AppColors.borderLight),
+          _buildInfoRow(Icons.cake_outlined, 'Date of Birth', dob),
+          const Divider(height: 1, color: AppColors.borderLight),
+          _buildInfoRow(Icons.language_outlined, 'Language', language),
         ],
       ),
     );
   }
 
-  Widget _buildInfoRow(
-      BuildContext context, IconData icon, String label, String value) {
+  Widget _buildInfoRow(IconData icon, String label, String value) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 12),
+      padding: const EdgeInsets.symmetric(vertical: 14),
       child: Row(
         children: [
-          Icon(icon, size: 20, color: Theme.of(context).primaryColor),
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label,
-                  style: TextStyle(
-                      fontSize: 11,
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurface
-                          .withOpacity(0.5))),
-              const SizedBox(height: 2),
-              Text(value,
+          Icon(icon, size: 20, color: AppColors.primaryDeep),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(fontSize: 11, color: AppColors.textSecondaryLight),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value.isEmpty ? '—' : value,
                   style: const TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w500)),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDailyGoalCard(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-              color: Theme.of(context).shadowColor.withOpacity(0.05),
-              blurRadius: 15,
-              offset: const Offset(0, 5)),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Daily Goal',
-                  style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.onSurface)),
-              const Icon(Icons.local_fire_department_rounded,
-                  color: Color(0xFFF59E0B), size: 32),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('80%',
-                        style: TextStyle(
-                            fontSize: 36,
-                            fontWeight: FontWeight.w800,
-                            color: Theme.of(context).primaryColor)),
-                    Text('Posture Score',
-                        style: TextStyle(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withOpacity(0.5),
-                            fontWeight: FontWeight.w600)),
-                  ],
-                ),
-              ),
-              Expanded(
-                flex: 2,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: LinearProgressIndicator(
-                    value: 0.8,
-                    minHeight: 14,
-                    backgroundColor:
-                        Theme.of(context).primaryColor.withOpacity(0.15),
-                    valueColor: AlwaysStoppedAnimation<Color>(
-                        Theme.of(context).primaryColor),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimaryLight,
                   ),
+                  overflow: TextOverflow.ellipsis,
                 ),
-              )
-            ],
+              ],
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildHardwareCard(BuildContext context) {
-    const successColor = Color(0xFF10B981);
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-              color: Theme.of(context).shadowColor.withOpacity(0.05),
-              blurRadius: 15,
-              offset: const Offset(0, 5)),
-        ],
-        border: Border.all(
-            color: Theme.of(context).primaryColor.withOpacity(0.1), width: 2),
-      ),
+  // ── Hardware Card ─────────────────────────────────────────
+
+  Widget _buildHardwareCard() {
+    return _card(
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-                color: successColor.withOpacity(0.15), shape: BoxShape.circle),
-            child: const Icon(Icons.bluetooth_connected_rounded,
-                color: successColor, size: 28),
+              color: AppColors.success.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.bluetooth_connected_rounded,
+              color: AppColors.success,
+              size: 26,
+            ),
           ),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Smart Shirt Sensors',
-                    style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: Theme.of(context).colorScheme.onSurface)),
+                const Text(
+                  'Smart Shirt Sensors',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                    color: AppColors.textPrimaryLight,
+                  ),
+                ),
                 const SizedBox(height: 4),
-                Text('Connected • Synced just now',
-                    style: TextStyle(
-                        fontSize: 13,
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurface
-                            .withOpacity(0.5),
-                        fontWeight: FontWeight.w600)),
+                const Text(
+                  'Connected • Synced just now',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondaryLight,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ],
             ),
           ),
           Column(
             children: [
-              const Icon(Icons.battery_4_bar_rounded,
-                  color: successColor, size: 24),
+              const Icon(Icons.battery_4_bar_rounded, color: AppColors.success, size: 22),
               const SizedBox(height: 4),
-              Text('82%',
-                  style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                      color: Theme.of(context).colorScheme.onSurface)),
+              const Text(
+                '82%',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimaryLight,
+                ),
+              ),
             ],
           ),
         ],
@@ -391,105 +497,155 @@ class _ProfileTabState extends ConsumerState<ProfileTab> {
     );
   }
 
-  Widget _buildSettingsGroup(BuildContext context, WidgetRef ref) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-              color: Theme.of(context).shadowColor.withValues(alpha: 0.05),
-              blurRadius: 15,
-              offset: const Offset(0, 5)),
-        ],
-      ),
+  // ── Settings Group ────────────────────────────────────────
+
+  Widget _buildSettingsGroup() {
+    return _card(
+      padding: EdgeInsets.zero,
       child: Column(
         children: [
-          _buildSettingsTile(context,
-              icon: Icons.settings_outlined,
-              title: 'Settings',
-              trailing: Icon(Icons.chevron_right_rounded,
-                  color: Theme.of(context)
-                      .colorScheme
-                      .onSurface
-                      .withValues(alpha: 0.3),
-                  size: 28),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const SettingsTab()),
-                );
-              }),
-          Divider(
-              height: 1,
-              indent: 64,
-              color: Theme.of(context).scaffoldBackgroundColor),
-          _buildSettingsTile(context,
-              icon: Icons.notifications_active_outlined,
-              title: 'Push Notifications',
-              trailing: Switch(
-                  value: true,
-                  onChanged: (_) {},
-                  activeThumbColor: Theme.of(context).primaryColor)),
-          Divider(
-              height: 1,
-              indent: 64,
-              color: Theme.of(context).scaffoldBackgroundColor),
-          _buildSettingsTile(context,
-              icon: Icons.security_outlined,
-              title: 'Privacy & Data',
-              trailing: Icon(Icons.chevron_right_rounded,
-                  color: Theme.of(context)
-                      .colorScheme
-                      .onSurface
-                      .withValues(alpha: 0.3),
-                  size: 28)),
-          Divider(
-              height: 1,
-              indent: 64,
-              color: Theme.of(context).scaffoldBackgroundColor),
-          ListTile(
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-            leading: const Icon(Icons.logout_rounded,
-                color: Color(0xFFEF4444), size: 28),
-            title: const Text('Log Out',
-                style: TextStyle(
-                    color: Color(0xFFEF4444),
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16)),
+          _buildSettingsTile(
+            icon: Icons.settings_outlined,
+            title: 'Settings',
+            trailing: const Icon(
+              Icons.chevron_right_rounded,
+              color: AppColors.textSecondaryLight,
+              size: 24,
+            ),
             onTap: () {
-              ref.read(authServiceProvider).logout();
-              ref.read(authStateProvider.notifier).setUser(null);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const SettingsTab()),
+              );
             },
+          ),
+          const Divider(height: 1, indent: 64, color: AppColors.borderLight),
+          _buildSettingsTile(
+            icon: Icons.notifications_active_outlined,
+            title: 'Push Notifications',
+            trailing: Switch(
+              value: true,
+              onChanged: (_) {},
+              activeThumbColor: AppColors.primaryDeep,
+            ),
+          ),
+          const Divider(height: 1, indent: 64, color: AppColors.borderLight),
+          _buildSettingsTile(
+            icon: Icons.security_outlined,
+            title: 'Privacy & Data',
+            onTap: _openPrivacy,
+            trailing: const Icon(
+              Icons.chevron_right_rounded,
+              color: AppColors.textSecondaryLight,
+              size: 24,
+            ),
+          ),
+          const Divider(height: 1, indent: 64, color: AppColors.borderLight),
+          ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+            leading: const Icon(Icons.logout_rounded, color: AppColors.danger, size: 24),
+            title: const Text(
+              'Log Out',
+              style: TextStyle(
+                color: AppColors.danger,
+                fontWeight: FontWeight.w700,
+                fontSize: 15,
+              ),
+            ),
+            // onTap: () {
+            //   ref.read(authServiceProvider).logout();
+            //   ref.read(authStateProvider.notifier).setUser(null);
+              onTap: () async {
+                await ref.read(authServiceProvider).logout();
+                ref.read(authStateProvider.notifier).setUser(null);
+
+                if (!mounted) return;
+
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(
+                    builder: (_) => const AuthScreen(),
+                  ),
+                  (route) => false,
+                );
+              },
           ),
         ],
       ),
     );
   }
 
-  Widget _buildSettingsTile(BuildContext context,
-      {required IconData icon,
-      required String title,
-      required Widget trailing,
-      VoidCallback? onTap}) {
+  Widget _buildSettingsTile({
+    required IconData icon,
+    required String title,
+    required Widget trailing,
+    VoidCallback? onTap,
+  }) {
     return ListTile(
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
       leading: Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
-            color: Theme.of(context).primaryColor.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(10)),
-        child: Icon(icon, color: Theme.of(context).primaryColor),
+          color: AppColors.primaryDeep.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Icon(icon, color: AppColors.primaryDeep, size: 20),
       ),
-      title: Text(title,
-          style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-              color: Theme.of(context).colorScheme.onSurface)),
+      title: Text(
+        title,
+        style: const TextStyle(
+          fontWeight: FontWeight.w700,
+          fontSize: 14,
+          color: AppColors.textPrimaryLight,
+        ),
+      ),
       trailing: trailing,
       onTap: onTap,
+    );
+  }
+}
+
+// ── Loading skeleton ───────────────────────────────────────────────────────
+
+class _PatientProfileSkeleton extends StatelessWidget {
+  const _PatientProfileSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: AppColors.surfaceLight,
+      child: SafeArea(
+        child: Column(
+          children: [
+            Container(
+              width: double.infinity,
+              height: 240,
+              decoration: const BoxDecoration(
+                color: AppColors.primaryDeep,
+                borderRadius: BorderRadius.only(
+                  bottomLeft: Radius.circular(32),
+                  bottomRight: Radius.circular(32),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: List.generate(
+                  3,
+                  (i) => Container(
+                    margin: const EdgeInsets.only(bottom: 14),
+                    height: 64,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

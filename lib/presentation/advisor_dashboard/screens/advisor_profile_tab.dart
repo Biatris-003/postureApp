@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:convert';
+import '../../auth/screens/auth_screen.dart';
 
 import '../../../data/datasources/auth_service_mock.dart';
 import '../../../core/theme/app_theme.dart';
@@ -181,6 +182,13 @@ class _AdvisorProfileTabState extends ConsumerState<AdvisorProfileTab> {
                       onPressed: () {
                         ref.read(authServiceProvider).logout();
                         ref.read(authStateProvider.notifier).setUser(null);
+                          if (!mounted) return;
+                          Navigator.of(context).pushAndRemoveUntil(
+                            MaterialPageRoute(
+                              builder: (_) => const AuthScreen(),
+                            ),
+                            (route) => false,
+                          );
                       },
                       style: ElevatedButton.styleFrom(
                         elevation: 0,

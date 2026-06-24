@@ -17,21 +17,7 @@ class ExercisesTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // currentUser kept for future use (e.g. analytics, personalization),
-    // but the plan itself no longer merges with a separate assigned plan.
     final recommendedExercisesAsync = ref.watch(recommendedExercisesProvider);
-
-    // ─── Posture-based exercises from this week's statistics ────────────
-    // weeklyPostureCountsProvider reads straight from Firestore — it does
-    // NOT depend on the Statistics tab being opened. It's a FutureProvider,
-    // so on first load it's genuinely in a `loading` state for as long as
-    // the Firestore round-trip takes. We must render that loading state
-    // explicitly — treating "still loading" the same as "no postures
-    // qualified" (returning an empty map) is what made this screen look
-    // empty until the data happened to arrive.
-
-    // ─── Read progress for display (tracked exercises only) ─────────────
-    final progress = ref.watch(exerciseProgressNotifierProvider);
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -53,19 +39,16 @@ class ExercisesTab extends ConsumerWidget {
           ),
         ),
         data: (recommendedExercises) {
-          // ─── Force-include the 4 tracked exercises at the bottom of the
-          // list, unless they're already present from the posture
-          // recommendation above (in which case they keep their
-          // percentage-ordered position and are not duplicated). ─────────
-         final rawExercises = _appendTrackedExercises(
-  recommended: recommendedExercises,
-  tracked: trackedExerciseTitles,
-);
-final doneSet = ref.watch(exerciseDoneProvider).value ?? {};
-final exercises = [
-  ...rawExercises.where((e) => !doneSet.contains(e.title)),
-  ...rawExercises.where((e) =>  doneSet.contains(e.title)),
-];
+          final rawExercises = _appendTrackedExercises(
+            recommended: recommendedExercises,
+            tracked: trackedExerciseTitles,
+          );
+          final doneSet = ref.watch(exerciseDoneProvider).value ?? {};
+          final exercises = [
+            ...rawExercises.where((e) => !doneSet.contains(e.title)),
+            ...rawExercises.where((e) => doneSet.contains(e.title)),
+          ];
+          
           if (exercises.isEmpty) {
             return Center(
               child: Padding(
@@ -88,7 +71,7 @@ final exercises = [
           return CustomScrollView(
             slivers: [
               SliverPadding(
-                padding: const EdgeInsets.fromLTRB(24, 32, 24, 16),
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
                 sliver: SliverToBoxAdapter(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -97,66 +80,55 @@ final exercises = [
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           Expanded(
-                            child: Text(
-                              'Your Plan',
-                              style: TextStyle(
-                                fontSize: 32,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: -0.5,
-                                color:
-                                    Theme.of(context).colorScheme.onSurface,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Text(
+                                //   'Exercises',
+                                //   style: TextStyle(
+                                //     fontSize: 24,
+                                //     fontWeight: FontWeight.w700,
+                                //     color: Theme.of(context).colorScheme.onSurface,
+                                //   ),
+                                // ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Recommended exercises based on your posture patterns',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface
+                                        .withValues(alpha: 0.6),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          _AssessmentButton(
+                            label: 'Weekly Assessment',
+                            icon: Icons.calendar_month_rounded,
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const WeeklyAssessmentScreen(),
                               ),
                             ),
                           ),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            alignment: WrapAlignment.end,
-                            children: [
-                              _AssessmentButton(
-                                label: 'Weekly Assessment',
-                                icon: Icons.calendar_month_rounded,
-                                onTap: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        const WeeklyAssessmentScreen(),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
                         ],
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8.0),
-                        child: Text(
-                          'Ordered by your most frequent posture patterns '
-                          'this week.',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withValues(alpha: 0.6),
-                            fontStyle: FontStyle.italic,
-                          ),
-                        ),
                       ),
                     ],
                   ),
                 ),
               ),
               SliverPadding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                 sliver: SliverList(
                   delegate: SliverChildBuilderDelegate((context, index) {
                     final exercise = exercises[index];
                     return Padding(
-                      padding: const EdgeInsets.only(bottom: 24),
-                      child:
-                          _buildExerciseCard(context, exercise, progress),
+                      padding: const EdgeInsets.only(bottom: 20),
+                      child: _buildExerciseCard(context, exercise, ref),
                     );
                   }, childCount: exercises.length),
                 ),
@@ -168,11 +140,6 @@ final exercises = [
     );
   }
 
-  /// Appends the 4 always-tracked exercises (Circumduction, Squatting,
-  /// Side Bending Right, Sit-to-stand) to the bottom of [recommended],
-  /// skipping any tracked title that's already present (case-insensitive,
-  /// trimmed) so nothing is duplicated. Tracked exercises that aren't in
-  /// [recommended] are pulled straight from the catalog by title.
   List<Exercise> _appendTrackedExercises({
     required List<Exercise> recommended,
     required List<String> tracked,
@@ -184,9 +151,9 @@ final exercises = [
 
     for (final title in tracked) {
       final key = title.toLowerCase().trim();
-      if (seen.contains(key)) continue; // already present from recommendation
+      if (seen.contains(key)) continue;
       final match = ExerciseData.findByTitle(title);
-      if (match == null) continue; // not found in catalog — skip, don't fabricate
+      if (match == null) continue;
       seen.add(key);
       result.add(match);
     }
@@ -197,16 +164,12 @@ final exercises = [
   Widget _buildExerciseCard(
     BuildContext context,
     Exercise exercise,
-    Map<String, int> progress,
+    WidgetRef ref,
   ) {
     final diffColor = exerciseDifficultyColor(exercise.difficultyLevel);
-
-    // Determine if this exercise is one of the 4 tracked
     final isTracked = trackedExerciseTitles.contains(exercise.title);
-
-    // Get completed reps from weekly assessment (Firestore). If the user
-    // hasn't completed a Weekly Assessment for this exercise yet, fall
-    // back to the catalog's fixed default reps/sets.
+    final progress = ref.watch(exerciseProgressNotifierProvider);
+    
     var repsPerSet = 5;
     String repsDisplay = exercise.reps.isNotEmpty
         ? '${exercise.reps} × ${exercise.sets}'
@@ -216,14 +179,12 @@ final exercises = [
       if (coachId != null && progress.containsKey(coachId)) {
         final completed = progress[coachId]!;
         if (completed > 0) {
-          // Calculate: Ceiling(completedReps / 3) Reps × 3 Sets
           repsPerSet = (completed / 3).ceil();
           repsDisplay = '$repsPerSet Reps × 3 Sets';
         }
       }
     }
 
-    // Get completed reps for the detail screen (if any)
     final coachId = isTracked ? exerciseTitleToCoachId[exercise.title] : null;
     final completedReps = (coachId != null && progress.containsKey(coachId))
         ? progress[coachId]
@@ -231,34 +192,33 @@ final exercises = [
 
     return GestureDetector(
       onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => ExerciseDetailScreen(
-                exercise: exercise,
-                heroTag: 'exercise_image_${exercise.id}',
-                isTracked: false,
-                completedReps: completedReps,
-                fromWeeklyAssessment: false,
-              ),
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ExerciseDetailScreen(
+              exercise: exercise,
+              heroTag: 'exercise_image_${exercise.id}',
+              isTracked: false,
+              completedReps: completedReps,
+              fromWeeklyAssessment: false,
             ),
-          );
-        },
-  
+          ),
+        );
+      },
       child: Container(
-        height: 240,
+        height: 210,
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(28),
+          borderRadius: BorderRadius.circular(24),
           boxShadow: [
             BoxShadow(
-              color: Theme.of(context).shadowColor.withValues(alpha: 0.08),
-              blurRadius: 20,
-              offset: const Offset(0, 10),
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 2),
             ),
           ],
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(28),
+          borderRadius: BorderRadius.circular(24),
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -289,35 +249,36 @@ final exercises = [
                 ),
               ),
               Positioned(
-  top: 16,
-  right: 16,
-  child: Consumer(
-    builder: (context, ref, _) {
-      final isDone = ref.watch(exerciseDoneProvider).value?.contains(exercise.title) ?? false;
-      if (isDone) {
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          decoration: BoxDecoration(
-            color: const Color(0xFF10b981),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.check_rounded, color: Colors.white, size: 13),
-              SizedBox(width: 4),
-              Text('Completed', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
-            ],
-          ),
-        );
-      }
-      return ExerciseCardBadge(
-        label: exercise.difficultyLevel,
-        color: diffColor,
-      );
-    },
-  ),
-),              Padding(
+                top: 16,
+                right: 16,
+                child: Consumer(
+                  builder: (context, ref, _) {
+                    final isDone = ref.watch(exerciseDoneProvider).value?.contains(exercise.title) ?? false;
+                    if (isDone) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF10b981),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.check_rounded, color: Colors.white, size: 13),
+                            SizedBox(width: 4),
+                            Text('Completed', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
+                          ],
+                        ),
+                      );
+                    }
+                    return ExerciseCardBadge(
+                      label: exercise.difficultyLevel,
+                      color: diffColor,
+                    );
+                  },
+                ),
+              ),
+              Padding(
                 padding: const EdgeInsets.all(20.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -335,9 +296,9 @@ final exercises = [
                                 exercise.title,
                                 style: const TextStyle(
                                   color: Colors.white,
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: -0.5,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: -0.3,
                                 ),
                               ),
                               const SizedBox(height: 6),
@@ -362,13 +323,11 @@ final exercises = [
                           ),
                         ),
                         Container(
-                          padding: const EdgeInsets.all(10),
+                          width: 40,
+                          height: 40,
                           decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.2),
+                            color: Colors.white.withValues(alpha: 0.15),
                             shape: BoxShape.circle,
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.35),
-                            ),
                           ),
                           child: const Icon(
                             Icons.arrow_forward_ios_rounded,
@@ -396,9 +355,8 @@ final exercises = [
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.45),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+        color: Colors.white.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -447,17 +405,10 @@ class _AssessmentButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: const Color(0xFF6C63FF),
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF6C63FF).withValues(alpha: 0.35),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
+          color: Theme.of(context).primaryColor,
+          borderRadius: BorderRadius.circular(16),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,

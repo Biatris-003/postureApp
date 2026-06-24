@@ -66,7 +66,7 @@ class RagChatService {
 
       final userId = appUser.userId;
 
-      // Get patient profile
+      // ── Get patient profile + resolve logical patientId ──────────────
       final patientQuery = await _db
           .collection('patients')
           .where('userId', isEqualTo: userId)
@@ -74,46 +74,74 @@ class RagChatService {
           .get();
 
       String patientName = 'Patient';
+      String patientId = userId; // fallback
+
+      if (patientQuery.docs.isNotEmpty) {
+        final patientDoc = patientQuery.docs.first;
+        final patient = patientDoc.data();
+        patientName = patient['fullName'] ?? 'Patient';
+
+        // ✅ Use the logical patientId field, same as AnalyticsService does
+        patientId = patient['patientId'] as String? ?? patientDoc.id;
+      }
+
+      // ── Look up today's statistics using the correct doc ID ──────────
       String mostProblematic = 'unknown';
       int postureScore = 0;
       int uprightMinutes = 0;
 
-      if (patientQuery.docs.isNotEmpty) {
-        final patient = patientQuery.docs.first.data();
-        patientName = patient['fullName'] ?? 'Patient';
-      }
-
-      // Get today's statistics
       final now = DateTime.now();
       final dateKey =
           '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+
+      // ✅ doc ID must be patientId_date (e.g. "p001_2026-06-24")
       final statsDoc = await _db
           .collection('statistics')
-          .doc('${userId}_$dateKey')
+          .doc('${patientId}_$dateKey')
           .get();
 
       if (statsDoc.exists) {
         final stats = statsDoc.data()!;
-        postureScore = stats['postureScore'] ?? 0;
-        mostProblematic = stats['mostProblematicPosture'] ?? 'unknown';
-        uprightMinutes = stats['uprightMinutes'] ?? 0;
+        postureScore = (stats['postureScore'] as num?)?.toInt() ?? 0;
+        mostProblematic = stats['mostProblematicPosture'] as String? ?? 'unknown';
+        uprightMinutes = (stats['uprightMinutes'] as num?)?.toInt() ?? 0;
+
+        print('✅ RAG context loaded: score=$postureScore, problematic=$mostProblematic');
+      } else {
+        print('⚠️ No stats doc found for ${patientId}_$dateKey');
+
+        // ── Fallback: query statistics collection by patientId field ────
+        final statsQuery = await _db
+            .collection('statistics')
+            .where('patientId', isEqualTo: patientId)
+            .orderBy('timestamp', descending: true)
+            .limit(1)
+            .get();
+
+        if (statsQuery.docs.isNotEmpty) {
+          final stats = statsQuery.docs.first.data();
+          postureScore = (stats['postureScore'] as num?)?.toInt() ?? 0;
+          mostProblematic = stats['mostProblematicPosture'] as String? ?? 'unknown';
+          uprightMinutes = (stats['uprightMinutes'] as num?)?.toInt() ?? 0;
+          print('✅ RAG context loaded from fallback query');
+        }
       }
 
-      // Get exercises from hardcoded catalog
+      // ── Build exercises list ─────────────────────────────────────────
       final exercises = ExerciseData.catalog
           .map((e) => '- ${e.title} (${e.reps}, ${e.sets})')
           .join('\n');
 
       return '''
-PATIENT PROFILE:
-- Name: $patientName
-- Today's Posture Score: $postureScore%
-- Most Problematic Posture: ${mostProblematic.replaceAll('_', ' ')}
-- Upright Time Today: $uprightMinutes minutes
+  PATIENT PROFILE:
+  - Name: $patientName
+  - Today's Posture Score: $postureScore%
+  - Most Problematic Posture: ${mostProblematic.replaceAll('_', ' ')}
+  - Upright Time Today: $uprightMinutes minutes
 
-ASSIGNED EXERCISES:
-$exercises
-''';
+  ASSIGNED EXERCISES:
+  $exercises
+  ''';
     } catch (e) {
       print('❌ Error getting patient context: $e');
       return 'Patient context temporarily unavailable.';
