@@ -270,7 +270,7 @@ class _AssistantTabState extends ConsumerState<AssistantTab>
                       base64Decode(_profileImageBase64!),
                       fit: BoxFit.cover,
                       filterQuality: FilterQuality.medium,
-                      errorBuilder: (_, __, ___) => _buildInitialsAvatar(),
+                      errorBuilder: (_, _, _) => _buildInitialsAvatar(),
                     )
                   : _buildInitialsAvatar(),
             ),

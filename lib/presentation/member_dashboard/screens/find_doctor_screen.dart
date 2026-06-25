@@ -286,7 +286,7 @@ class _FindDoctorScreenState extends State<FindDoctorScreen> {
                             padding: const EdgeInsets.fromLTRB(
                                 20, 0, 20, 40),
                             itemCount: _filtered.length,
-                            separatorBuilder: (_, __) =>
+                            separatorBuilder: (_, _) =>
                                 const SizedBox(height: 10),
                             itemBuilder: (context, i) =>
                                 _buildDoctorCard(_filtered[i]),
@@ -397,7 +397,7 @@ class _FindDoctorScreenState extends State<FindDoctorScreen> {
                 ? Image.memory(
                     base64Decode(profileImage),
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Center(
+                    errorBuilder: (_, _, _) => Center(
                       child: Text(
                         initials,
                         style: const TextStyle(

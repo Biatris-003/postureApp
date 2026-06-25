@@ -1,11 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/theme/app_theme.dart';
-import 'data/datasources/auth_service_mock.dart';
 import 'presentation/auth/screens/welcome_screen.dart';
-import 'presentation/auth/screens/auth_screen.dart';
-import 'presentation/member_dashboard/screens/member_dashboard_screen.dart';
-import 'presentation/advisor_dashboard/screens/advisor_dashboard_screen.dart';
 import 'providers/user_settings_provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';

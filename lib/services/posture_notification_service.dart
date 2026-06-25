@@ -31,11 +31,13 @@ class PostureNotificationService {
     String? postureLabel,
     String? sessionTrackingId,
     int? sequenceNumber,
+    bool vibrate = true,
   }) async {
     await _showLocalNotification(
       title: title,
       message: message,
       alertType: alertType,
+      vibrate: vibrate,
     );
 
     await _db.collection('alerts').add({
@@ -58,6 +60,7 @@ class PostureNotificationService {
     required String title,
     required String message,
     required String alertType,
+    required bool vibrate,
   }) async {
     try {
       await _localNotificationsChannel.invokeMethod<void>(
@@ -67,6 +70,7 @@ class PostureNotificationService {
           'title': title,
           'message': message,
           'alertType': alertType,
+          'vibrate': vibrate,
         },
       );
     } on MissingPluginException {

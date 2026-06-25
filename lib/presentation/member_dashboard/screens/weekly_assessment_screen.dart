@@ -11,7 +11,7 @@ import 'exercise_coach_screen.dart';
 import '../../../providers/exercise_done_provider.dart';
 
 class WeeklyAssessmentScreen extends ConsumerWidget {
-  const WeeklyAssessmentScreen({Key? key}) : super(key: key);
+  const WeeklyAssessmentScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -210,7 +210,8 @@ class WeeklyAssessmentScreen extends ConsumerWidget {
             BoxShadow(
               color: Theme.of(context).shadowColor.withValues(alpha: 0.08),
               blurRadius: 20,
-              offset: const Offset(0, 10),
+              spreadRadius: -6,
+              offset: const Offset(0, 14),
             ),
           ],
         ),

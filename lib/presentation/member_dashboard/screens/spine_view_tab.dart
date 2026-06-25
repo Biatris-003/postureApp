@@ -1,11 +1,14 @@
 import 'dart:convert';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import '../../../core/theme/app_theme.dart';
 import '../../../services/ml/spine_kinematics.dart';
 import '../../../services/session_provider.dart';
 
@@ -77,14 +80,10 @@ class _SpineViewTabState extends ConsumerState<SpineViewTab>
     setState(() => _neutralQuats = Map.from(quats));
   }
 
-  // Sends the scaffold background color to Three.js so it matches the app theme.
+  // Sends the reconstruction panel color to Three.js.
   void _syncBackground(BuildContext context) {
     if (!_webReady) return;
-    final c = Theme.of(context).scaffoldBackgroundColor;
-    final hex = c.r.round().toRadixString(16).padLeft(2, '0') +
-                c.g.round().toRadixString(16).padLeft(2, '0') +
-                c.b.round().toRadixString(16).padLeft(2, '0');
-    _wvc.runJavaScript("setBackground('#$hex')");
+    _wvc.runJavaScript("setBackground('#11161d')");
   }
 
   /// Sends the bundled GLB directly to the WebView. A data URL avoids the
@@ -163,99 +162,18 @@ class _SpineViewTabState extends ConsumerState<SpineViewTab>
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
+        top: false,
         child: Column(
           children: [
-            _Header(session: session),
             Expanded(
               child: quats == null || session.status == SessionStatus.idle
                   ? _IdleBody(status: session.status)
                   : _LiveBody(
-                      quats: quats,
                       wvc: _wvc,
-                      neutralQuats: _neutralQuats,
                     ),
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-// ── Header ───────────────────────────────────────────────────────────────────
-
-class _Header extends StatelessWidget {
-  const _Header({required this.session});
-  final SessionState session;
-
-  @override
-  Widget build(BuildContext context) {
-    final active = session.status == SessionStatus.active;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Live Spine Model',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurface,
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '3D real-time model  ·  drag to rotate',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.55),
-                    fontSize: 13,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(
-              color: Theme.of(context).cardColor,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: Theme.of(context).shadowColor.withValues(alpha: 0.06),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.circle,
-                    color: active
-                        ? const Color(0xFF10B981)
-                        : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.3),
-                    size: 10),
-                const SizedBox(width: 8),
-                Text(
-                  active ? 'LIVE' : 'IDLE',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurface,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 13,
-                    letterSpacing: 1,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -309,152 +227,117 @@ class _IdleBody extends StatelessWidget {
 // ── Metrics row ───────────────────────────────────────────────────────────────
 class _LiveBody extends StatelessWidget {
   const _LiveBody({
-    required this.quats,
     required this.wvc,
-    required this.neutralQuats,
   });
 
-  final Map<String, List<double>> quats;
   final WebViewController wvc;
-  final Map<String, List<double>>? neutralQuats;
 
   @override
   Widget build(BuildContext context) {
-    final metrics = SpineKinematics.clinicalAngles(
-      quats,
-      neutralQuats: neutralQuats,
-    );
-
-    final cards = [
-      _SideMetric(
-        label: 'Neck\nCurve',
-        value: metrics['cervicalLordosis'] ?? 0,
-        warnAbove: 40,
-        icon: Icons.arrow_downward_rounded,
-      ),
-      _SideMetric(
-        label: 'Upper Back\nRounding',
-        value: metrics['thoracicKyphosis'] ?? 0,
-        warnAbove: 50,
-        icon: Icons.arrow_upward_rounded,
-      ),
-      _SideMetric(
-        label: 'Side\nTilting',
-        value: metrics['lateralDeviation'] ?? 0,
-        warnAbove: 10,
-        icon: Icons.swap_horiz_rounded,
-      ),
-      _SideMetric(
-        label: 'Lower Back\nArch',
-        value: metrics['lumbarLordosis'] ?? 0,
-        warnAbove: 60,
-        icon: Icons.arrow_downward_rounded,
-      ),
-    ];
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final cardWidth = math.min(98.0, constraints.maxWidth * 0.23);
-
-        return ClipRRect(
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+    const viewerBackground = AppColors.surfaceDark;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: viewerBackground,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: AppColors.borderDark),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.10),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
           child: Stack(
             fit: StackFit.expand,
             children: [
-              ColoredBox(
-                color: Theme.of(context).scaffoldBackgroundColor,
-                child: WebViewWidget(controller: wvc),
-              ),
-
-              Positioned(
-                      left: 8,
-                      top: constraints.maxHeight * 0.12,
-                      width: cardWidth,
-                      child: IgnorePointer(
-                        child: Column(
-                          children: [
-                            cards[0],
-                            const SizedBox(height: 10),
-                            cards[1],
-                            const SizedBox(height: 10),
-                            cards[2],
-                            const SizedBox(height: 10),
-                            cards[3],
-                          ],
-                        ),
-                      ),
+              Positioned.fill(
+                top: 88,
+                child: WebViewWidget(
+                  controller: wvc,
+                  gestureRecognizers: {
+                    Factory<OneSequenceGestureRecognizer>(
+                      () => EagerGestureRecognizer(),
                     ),
+                  },
+                ),
+              ),
+              const Positioned(
+                left: 20,
+                top: 20,
+                right: 110,
+                child: _ViewerTitle(),
+              ),
+              Positioned(
+                top: 22,
+                right: 18,
+                child: _LivePill(),
+              ),
             ],
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }
 
-class _SideMetric extends StatelessWidget {
-  const _SideMetric({
-    required this.label,
-    required this.value,
-    required this.warnAbove,
-    required this.icon,
-  });
-
-  final String label;
-  final double value;
-  final double warnAbove;
-  final IconData icon;
+class _ViewerTitle extends StatelessWidget {
+  const _ViewerTitle();
 
   @override
   Widget build(BuildContext context) {
-    final isWarning = value > warnAbove;
-    final isGood = value < warnAbove * 0.6;
-    final color = isWarning
-        ? const Color(0xFFEF4444)
-        : isGood
-            ? const Color(0xFF10B981)
-            : const Color(0xFFF59E0B);
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor.withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: color.withValues(alpha: 0.22),
+    return const Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Live Spine Model',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 21,
+            fontWeight: FontWeight.w800,
+          ),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.10),
-            blurRadius: 12,
-            offset: const Offset(0, 5),
+        SizedBox(height: 4),
+        Text(
+          '3D real-time model  -  drag to rotate',
+          style: TextStyle(
+            color: Color(0xB3FFFFFF),
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
           ),
-        ],
+        ),
+      ],
+    );
+  }
+}
+
+class _LivePill extends StatelessWidget {
+  const _LivePill();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(20),
       ),
-      child: Column(
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: color, size: 18),
-          const SizedBox(height: 6),
+          Icon(Icons.circle, color: Color(0xFF22C55E), size: 8),
+          SizedBox(width: 7),
           Text(
-            '${value.toStringAsFixed(1)}°',
+            'LIVE',
             style: TextStyle(
-              color: color,
-              fontSize: 18,
+              color: Colors.white,
+              fontSize: 12,
               fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 3),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Theme.of(context)
-                  .colorScheme
-                  .onSurface
-                  .withValues(alpha: 0.62),
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-              height: 1.25,
+              letterSpacing: 0.4,
             ),
           ),
         ],
@@ -462,6 +345,7 @@ class _SideMetric extends StatelessWidget {
     );
   }
 }
+
 
 // ── SpinePainter ──────────────────────────────────────────────────────────────
 

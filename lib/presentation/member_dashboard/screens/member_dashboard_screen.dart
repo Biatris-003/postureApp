@@ -382,6 +382,7 @@ class _ProgressTabState extends State<_ProgressTab>
         Expanded(
           child: TabBarView(
             controller: _tabController,
+            physics: const NeverScrollableScrollPhysics(),
             children: const [
               StatisticsTab(),
               ExercisesTab(),

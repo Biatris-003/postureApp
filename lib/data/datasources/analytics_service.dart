@@ -388,8 +388,9 @@ Future<List<PostureClassification>> getTodayClassifications(
     final doc = await _db.collection('sessionResults').doc(sessionId).get();
     if (!doc.exists) return 0;
     final data = doc.data()!;
-    if (data.containsKey('durationMinutes'))
+    if (data.containsKey('durationMinutes')) {
       return data['durationMinutes'] as int;
+    }
     final start = (data['startTimestamp'] as Timestamp).toDate();
     final end = (data['endTimestamp'] as Timestamp).toDate();
     return end.difference(start).inMinutes;

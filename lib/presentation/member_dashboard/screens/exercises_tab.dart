@@ -11,9 +11,10 @@ import '../../../providers/recommended_exercises_provider.dart';
 import '../widgets/exercise_card_badge.dart';
 import 'exercise_coach_screen.dart';
 import '../../../providers/exercise_done_provider.dart';
+import '../../../core/theme/app_theme.dart';
 
 class ExercisesTab extends ConsumerWidget {
-  const ExercisesTab({Key? key}) : super(key: key);
+  const ExercisesTab({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -212,8 +213,9 @@ class ExercisesTab extends ConsumerWidget {
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 10,
-              offset: const Offset(0, 2),
+              blurRadius: 12,
+              spreadRadius: -4,
+              offset: const Offset(0, 8),
             ),
           ],
         ),
@@ -240,7 +242,7 @@ class ExercisesTab extends ConsumerWidget {
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      Colors.black.withValues(alpha: 0.35),
+                      Colors.transparent,
                       Colors.transparent,
                       Colors.black.withValues(alpha: 0.85),
                     ],
@@ -253,10 +255,18 @@ class ExercisesTab extends ConsumerWidget {
                 right: 16,
                 child: Consumer(
                   builder: (context, ref, _) {
-                    final isDone = ref.watch(exerciseDoneProvider).value?.contains(exercise.title) ?? false;
+                    final isDone =
+                        ref
+                            .watch(exerciseDoneProvider)
+                            .value
+                            ?.contains(exercise.title) ??
+                        false;
                     if (isDone) {
                       return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
                         decoration: BoxDecoration(
                           color: const Color(0xFF10b981),
                           borderRadius: BorderRadius.circular(20),
@@ -264,9 +274,20 @@ class ExercisesTab extends ConsumerWidget {
                         child: const Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.check_rounded, color: Colors.white, size: 13),
+                            Icon(
+                              Icons.check_rounded,
+                              color: Colors.white,
+                              size: 13,
+                            ),
                             SizedBox(width: 4),
-                            Text('Completed', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
+                            Text(
+                              'Completed',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
                           ],
                         ),
                       );

@@ -4,10 +4,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:convert';
 import '../../../data/datasources/auth_service_mock.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../services/ble/ble_monitor_provider.dart';
+import '../../../services/ble/ble_receiver.dart';
 import 'settings_tab.dart';
 import 'edit_patient_profile_screen.dart';
 import '../../advisor_dashboard/screens/privacy_data_screen.dart';
 import '../../auth/screens/auth_screen.dart';
+import '../../../services/session_provider.dart';
 
 class ProfileTab extends ConsumerStatefulWidget {
   const ProfileTab({super.key});
@@ -147,6 +150,9 @@ class _ProfileTabState extends ConsumerState<ProfileTab> {
     final language = _patientData?['preferredLanguage'] as String? ?? '';
     final initials = name.split(' ').where((e) => e.isNotEmpty).map((e) => e[0]).take(2).join();
     final image = _patientData?['profileImageBase64'] as String?;
+    final monitor = ref.watch(bleMonitorProvider);
+    final enabledMap = ref.watch(enabledSensorsProvider);
+    final sensors = _sensorChargeInfo(monitor, enabledMap);
 
     return Scaffold(
       backgroundColor: AppColors.surfaceLight,
@@ -176,9 +182,9 @@ class _ProfileTabState extends ConsumerState<ProfileTab> {
                     const SizedBox(height: 10),
                     _buildInfoCard(gender, dob, language),
                     const SizedBox(height: 24),
-                    _sectionLabel('Hardware Connections'),
+                    _sectionLabel('Sensor Charge'),
                     const SizedBox(height: 10),
-                    _buildHardwareCard(),
+                    _buildSensorChargeCard(sensors),
                     const SizedBox(height: 24),
                     _sectionLabel('Account Settings'),
                     const SizedBox(height: 10),
@@ -437,7 +443,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab> {
 
   // ── Hardware Card ─────────────────────────────────────────
 
-  Widget _buildHardwareCard() {
+  Widget buildHardwareCard() {
     return _card(
       child: Row(
         children: [
@@ -499,6 +505,147 @@ class _ProfileTabState extends ConsumerState<ProfileTab> {
 
   // ── Settings Group ────────────────────────────────────────
 
+  List<_SensorChargeInfo> _sensorChargeInfo(
+    BleMonitorState monitor,
+    Map<String, bool> enabledMap,
+  ) {
+    const locations = {
+      'C7': 'Neck',
+      'T4': 'Upper back',
+      'T12': 'Lower thoracic',
+      'L5': 'Lower back',
+    };
+
+    return kSensorIdMap.entries.map((entry) {
+      final mac = entry.key;
+      final label = entry.value;
+      final enabled = enabledMap[mac] ?? true;
+      final connected = enabled && (monitor.connections[mac] ?? false);
+      return _SensorChargeInfo(
+        label: label,
+        location: locations[label] ?? label,
+        batteryPct: monitor.batteryLevels[mac] ?? 0,
+        connected: connected,
+        enabled: enabled,
+      );
+    }).toList();
+  }
+
+  Color _batteryColor(int pct) {
+    if (pct >= 60) return AppColors.success;
+    if (pct >= 30) return const Color(0xFFB8860B);
+    return AppColors.danger;
+  }
+
+  IconData _batteryIcon(int pct) {
+    if (pct >= 80) return Icons.battery_full_rounded;
+    if (pct >= 60) return Icons.battery_5_bar_rounded;
+    if (pct >= 40) return Icons.battery_3_bar_rounded;
+    if (pct >= 20) return Icons.battery_2_bar_rounded;
+    return Icons.battery_alert_rounded;
+  }
+
+  Widget _buildSensorChargeCard(List<_SensorChargeInfo> sensors) {
+    return _card(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Column(
+        children: [
+          for (int i = 0; i < sensors.length; i++) ...[
+            _buildSensorChargeRow(sensors[i]),
+            if (i < sensors.length - 1)
+              const Divider(height: 1, indent: 72, color: AppColors.borderLight),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSensorChargeRow(_SensorChargeInfo sensor) {
+    final showBattery = sensor.enabled && sensor.connected;
+    final batteryColor =
+        showBattery ? _batteryColor(sensor.batteryPct) : AppColors.textSecondaryLight;
+    final batteryIcon =
+        showBattery ? _batteryIcon(sensor.batteryPct) : Icons.battery_unknown_rounded;
+    final status = !sensor.enabled
+        ? 'Disabled'
+        : sensor.connected
+            ? 'Connected'
+            : 'Offline';
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: AppColors.primaryDeep.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(11),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              sensor.label,
+              style: const TextStyle(
+                color: AppColors.primaryDeep,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  sensor.location,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimaryLight,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  status,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: sensor.connected ? AppColors.success : AppColors.textSecondaryLight,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          SizedBox(
+            width: 70,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                Icon(batteryIcon, color: batteryColor, size: 20),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    showBattery ? '${sensor.batteryPct}%' : 'N/A',
+                    textAlign: TextAlign.right,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: batteryColor,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSettingsGroup() {
     return _card(
       padding: EdgeInsets.zero,
@@ -506,7 +653,7 @@ class _ProfileTabState extends ConsumerState<ProfileTab> {
         children: [
           _buildSettingsTile(
             icon: Icons.settings_outlined,
-            title: 'Settings',
+            title: 'Feedback Settings',
             trailing: const Icon(
               Icons.chevron_right_rounded,
               color: AppColors.textSecondaryLight,
@@ -518,16 +665,6 @@ class _ProfileTabState extends ConsumerState<ProfileTab> {
                 MaterialPageRoute(builder: (context) => const SettingsTab()),
               );
             },
-          ),
-          const Divider(height: 1, indent: 64, color: AppColors.borderLight),
-          _buildSettingsTile(
-            icon: Icons.notifications_active_outlined,
-            title: 'Push Notifications',
-            trailing: Switch(
-              value: true,
-              onChanged: (_) {},
-              activeThumbColor: AppColors.primaryDeep,
-            ),
           ),
           const Divider(height: 1, indent: 64, color: AppColors.borderLight),
           _buildSettingsTile(
@@ -605,6 +742,22 @@ class _ProfileTabState extends ConsumerState<ProfileTab> {
 }
 
 // ── Loading skeleton ───────────────────────────────────────────────────────
+
+class _SensorChargeInfo {
+  const _SensorChargeInfo({
+    required this.label,
+    required this.location,
+    required this.batteryPct,
+    required this.connected,
+    required this.enabled,
+  });
+
+  final String label;
+  final String location;
+  final int batteryPct;
+  final bool connected;
+  final bool enabled;
+}
 
 class _PatientProfileSkeleton extends StatelessWidget {
   const _PatientProfileSkeleton();

@@ -508,7 +508,9 @@ class _StatisticsTabState extends ConsumerState<StatisticsTab> {
                         pieTouchData: PieTouchData(
                           touchCallback: (event, response) {
                             if (!event.isInterestedForInteractions ||
-                                response?.touchedSection == null) return;
+                                response?.touchedSection == null) {
+                              return;
+                            }
                             final i = response!.touchedSection!.touchedSectionIndex;
                             if (i >= 0 && i < validKeys.length) {
                               _pieResetTimer?.cancel();

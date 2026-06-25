@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/datasources/analytics_service.dart';
 import '../data/datasources/auth_service_mock.dart';
+import '../providers/user_settings_provider.dart';
 import '../providers/weekly_posture_counts_provider.dart';
 import 'ble/ble_monitor_provider.dart';
 import 'ml/realtime_processor.dart';
@@ -241,8 +242,44 @@ class SessionNotifier extends Notifier<SessionState> {
     return const SessionState();
   }
 
+  // ── Helper: read current user settings without relying on valueOrNull ──
+  // Mirrors the .when(...) pattern already used in SettingsTab, so it works
+  // regardless of the installed flutter_riverpod version.
+  bool _vibrationFeedbackEnabled() {
+    return ref.read(userSettingsProvider).when(
+      data: (value) => value.vibrationFeedback,
+      loading: () => true,
+      error: (_, __) => true,
+    );
+  }
+
+  bool _dailySummaryEnabled() {
+    return ref.read(userSettingsProvider).when(
+      data: (value) => value.dailySummary,
+      loading: () => true,
+      error: (_, __) => true,
+    );
+  }
+
+  // Future<void> startSession() async {
+  //   await _cleanup();
+  //   final initialMonitor = ref.read(bleMonitorProvider);
+  //   final startedAt = DateTime.now();
+  //   _resetSessionNotificationTracking(startedAt: startedAt);
+  //   _activePatientId = await _resolveCurrentPatientId();
+  //   _sessionTrackingId = 'monitoring_${startedAt.millisecondsSinceEpoch}';
+  //   state = SessionState(
+  //     status: SessionStatus.starting,
+  //     startTime: startedAt,
+  //     sensorBatteryLevels: initialMonitor.batteryLevels,
+  //     sensorConnections: initialMonitor.connections,
+  //   );
+
   Future<void> startSession() async {
     await _cleanup();
+    // Roll a fresh batch of (simulated) per-sensor battery levels for this
+    // session. They stay frozen until the next time a session starts.
+    ref.read(bleMonitorProvider.notifier).rollFakeBatteryLevels();
     final initialMonitor = ref.read(bleMonitorProvider);
     final startedAt = DateTime.now();
     _resetSessionNotificationTracking(startedAt: startedAt);
@@ -254,6 +291,7 @@ class SessionNotifier extends Notifier<SessionState> {
       sensorBatteryLevels: initialMonitor.batteryLevels,
       sensorConnections: initialMonitor.connections,
     );
+    // ...rest unchanged
 
     // Get the shared BleReceiver from the persistent monitor
     final bleReceiver = ref.read(bleMonitorProvider.notifier).bleReceiver;
@@ -394,6 +432,7 @@ class SessionNotifier extends Notifier<SessionState> {
       alertType: 'movement_break',
       timestamp: now,
       sessionTrackingId: _sessionTrackingId,
+      vibrate: _vibrationFeedbackEnabled(),
     );
 
     do {
@@ -426,6 +465,7 @@ class SessionNotifier extends Notifier<SessionState> {
       timestamp: now,
       sessionTrackingId: _sessionTrackingId,
       sequenceNumber: sequenceNumber,
+      vibrate: _vibrationFeedbackEnabled(),
     );
 
     _postureAlertTimestamps.add(now);
@@ -440,6 +480,7 @@ class SessionNotifier extends Notifier<SessionState> {
         alertType: 'frequent_posture_corrections',
         timestamp: now,
         sessionTrackingId: _sessionTrackingId,
+        vibrate: _vibrationFeedbackEnabled(),
       );
     }
   }
@@ -543,6 +584,18 @@ class SessionNotifier extends Notifier<SessionState> {
       );
       if (todayClassifications.isNotEmpty) {
         await analytics.saveDailyStatistics(patientId, todayClassifications);
+        if (_dailySummaryEnabled()) {
+          await _notificationService.savePatientAlert(
+            patientId: patientId,
+            title: 'Daily Posture Summary Ready',
+            message:
+                'Your posture summary has been updated with today\'s latest session.',
+            alertType: 'daily_summary',
+            timestamp: DateTime.now(),
+            sessionTrackingId: _sessionTrackingId,
+            vibrate: _vibrationFeedbackEnabled(),
+          );
+        }
       }
       ref.invalidate(weeklyPostureCountsProvider);
     } catch (e) {

@@ -6,7 +6,6 @@ import '../../../data/datasources/auth_service_mock.dart';
 import '../../../core/theme/app_theme.dart';
 import 'patient_notifications_screen.dart';
 import 'find_doctor_screen.dart';
-import '../../../data/datasources/chat_service_mock.dart';
 import '../../advisor_dashboard/screens/chat_screen.dart';
 
 class HomeTab extends ConsumerStatefulWidget {

@@ -144,13 +144,13 @@ class _PrivacyDataScreenState extends State<PrivacyDataScreen> {
                 ),
               ),
               const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 10,
+                runSpacing: 8,
                 children: [
                   _trustBadge(Icons.lock_outline, 'Encrypted'),
-                  const SizedBox(width: 10),
                   _trustBadge(Icons.verified_user_outlined, 'Access Controlled'),
-                  const SizedBox(width: 10),
                   _trustBadge(Icons.dns_outlined, 'Firebase Secured'),
                 ],
               ),

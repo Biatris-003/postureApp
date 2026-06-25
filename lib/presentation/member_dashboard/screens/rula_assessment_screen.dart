@@ -4,7 +4,7 @@ import 'package:camera/camera.dart';
 import 'package:google_mlkit_pose_detection/google_mlkit_pose_detection.dart';
 
 class RulaAssessmentScreen extends StatefulWidget {
-  const RulaAssessmentScreen({Key? key}) : super(key: key);
+  const RulaAssessmentScreen({super.key});
 
   @override
   State<RulaAssessmentScreen> createState() => _RulaAssessmentScreenState();
@@ -1003,7 +1003,7 @@ class RulaAngles {
         final mhpx = (lhp.x + rhp.x) / 2, mhpy = (lhp.y + rhp.y) / 2;
         final el = (lel?.likelihood ?? 0) >= (rel?.likelihood ?? 0) ? lel : rel;
         final sh = (lel?.likelihood ?? 0) >= (rel?.likelihood ?? 0) ? lsh : rsh;
-        if (el != null && sh != null) {
+        if (el != null) {
           final ax = el.x - sh.x, ay = el.y - sh.y;
           final tx = mhpx - mshx, ty = mhpy - mshy;
           final dot = ax * tx + ay * ty;

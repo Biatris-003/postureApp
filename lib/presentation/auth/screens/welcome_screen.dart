@@ -77,7 +77,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
       PageRouteBuilder(
         transitionDuration: Duration.zero,
         reverseTransitionDuration: Duration.zero,
-        pageBuilder: (_, __, ___) => const AuthScreen(), // ✅ Go to AuthScreen
+        pageBuilder: (_, _, _) => const AuthScreen(), // ✅ Go to AuthScreen
       ),
     );
   }

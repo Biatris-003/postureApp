@@ -164,7 +164,9 @@ class _NotificationsTabState extends ConsumerState<NotificationsTab> {
           .update({'isRead': true});
     }
     setState(() {
-      for (final n in _notifications) n['isRead'] = true;
+      for (final n in _notifications) {
+        n['isRead'] = true;
+      }
     });
   }
 

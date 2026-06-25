@@ -223,9 +223,13 @@ class Preprocessing {
     final nCols = mat[0].length;
     for (int c = 0; c < nCols; c++) {
       double sum = 0;
-      for (final row in mat) sum += row[c];
+      for (final row in mat) {
+        sum += row[c];
+      }
       final mean = sum / mat.length;
-      for (final row in mat) row[c] -= mean;
+      for (final row in mat) {
+        row[c] -= mean;
+      }
     }
   }
 
@@ -236,7 +240,9 @@ class Preprocessing {
     for (int c = 0; c < nCols; c++) {
       final col = [for (final row in mat) row[c]];
       final filtered = _hampelFilter(col);
-      for (int r = 0; r < mat.length; r++) mat[r][c] = filtered[r];
+      for (int r = 0; r < mat.length; r++) {
+        mat[r][c] = filtered[r];
+      }
     }
   }
 
@@ -265,7 +271,9 @@ class Preprocessing {
     for (int c = 0; c < nCols; c++) {
       final col = [for (final row in mat) row[c]];
       final filtered = _filtfilt(_butterB, _butterA, col);
-      for (int r = 0; r < mat.length; r++) mat[r][c] = filtered[r];
+      for (int r = 0; r < mat.length; r++) {
+        mat[r][c] = filtered[r];
+      }
     }
   }
 
@@ -318,8 +326,12 @@ class Preprocessing {
 
   /// Wraps angle to (−π, π].
   static double _wrapAngle(double a) {
-    while (a > pi) a -= 2 * pi;
-    while (a < -pi) a += 2 * pi;
+    while (a > pi) {
+      a -= 2 * pi;
+    }
+    while (a < -pi) {
+      a += 2 * pi;
+    }
     return a;
   }
 

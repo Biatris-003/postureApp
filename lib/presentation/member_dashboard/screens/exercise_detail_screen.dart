@@ -7,6 +7,7 @@ import '../widgets/exercise_card_badge.dart';
 import '../../../utils/exercise_constants.dart'; 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../providers/exercise_done_provider.dart';
+import '../../../core/theme/app_theme.dart';
 
 class ExerciseDetailScreen extends ConsumerStatefulWidget {
   final Exercise exercise;
@@ -181,7 +182,7 @@ class _ExerciseDetailScreenState extends ConsumerState<ExerciseDetailScreen> {
   };
 
   // ─── Seconds per rep ─────────────────────────────────────────────────
-  static const Color _accentColor = Color(0xFF6C63FF);
+  static const Color _accentColor = AppColors.primaryDeep;
 
   // ─── Helper: Calculate total timer ──────────────────────────────────
   // ─── Lifecycle ──────────────────────────────────────────────────────
@@ -297,9 +298,9 @@ class _ExerciseDetailScreenState extends ConsumerState<ExerciseDetailScreen> {
                       margin: const EdgeInsets.all(16),
                       padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 24),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF10141c),
+                        color: AppColors.surfaceDark,
                         borderRadius: BorderRadius.circular(24),
-                        border: Border.all(color: const Color(0xFF1e2638)),
+                        border: Border.all(color: AppColors.borderDark),
                       ),
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
@@ -307,11 +308,11 @@ class _ExerciseDetailScreenState extends ConsumerState<ExerciseDetailScreen> {
                           Container(
                             padding: const EdgeInsets.all(20),
                             decoration: BoxDecoration(
-                              color: Colors.red.withOpacity(0.1),
+                              color: AppColors.primaryTeal.withValues(alpha: 0.16),
                               shape: BoxShape.circle,
                             ),
                             child: const Icon(Icons.sensors_off_rounded,
-                                size: 48, color: Colors.redAccent),
+                                size: 48, color: AppColors.primaryTeal),
                           ),
                           const SizedBox(height: 20),
                           const Text(
@@ -338,7 +339,7 @@ class _ExerciseDetailScreenState extends ConsumerState<ExerciseDetailScreen> {
                             child: ElevatedButton(
                               onPressed: () => Navigator.pop(context),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF1e2638),
+                                backgroundColor: AppColors.cardDark,
                                 foregroundColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(vertical: 14),
                                 shape: RoundedRectangleBorder(
@@ -362,7 +363,7 @@ class _ExerciseDetailScreenState extends ConsumerState<ExerciseDetailScreen> {
                   borderRadius: BorderRadius.circular(18),
                 ),
                 elevation: 4,
-                shadowColor: _accentColor.withValues(alpha: 0.4),
+                shadowColor: _accentColor.withValues(alpha: 0.25),
               ),
               child: const Text(
                 'Start Exercise',
@@ -404,7 +405,7 @@ class _ExerciseDetailScreenState extends ConsumerState<ExerciseDetailScreen> {
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
                           colors: [
-                            Colors.black.withValues(alpha: 0.15),
+                            Colors.transparent,
                             Colors.transparent,
                             Colors.black.withValues(alpha: 0.45),
                           ],
@@ -592,14 +593,14 @@ actions: [
       padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF6C63FF), Color(0xFF8B5CF6)],
+          colors: [AppColors.ink, AppColors.primaryMid],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF6C63FF).withValues(alpha: 0.3),
+            color: AppColors.primaryDeep.withValues(alpha: 0.22),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -615,7 +616,7 @@ actions: [
             ),
             child: const Icon(
               Icons.flag_rounded,
-              color: Color(0xFF6C63FF),
+              color: AppColors.primaryDeep,
               size: 28,
             ),
           ),
@@ -714,7 +715,7 @@ actions: [
         height: 240,
         width: double.infinity,
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Theme.of(context).cardColor,
           borderRadius: BorderRadius.circular(24),
           boxShadow: [
             BoxShadow(
@@ -865,11 +866,11 @@ actions: [
 
   Widget _buildErrorImage(BuildContext context) {
     return Container(
-      color: _accentColor.withValues(alpha: 0.1),
+      color: Colors.white,
       child: const Icon(
         Icons.image_not_supported_rounded,
         size: 60,
-        color: _accentColor,
+        color: AppColors.primaryDeep,
       ),
     );
   }
