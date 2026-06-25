@@ -46,8 +46,8 @@ class _PatientNotificationsScreenState
       'label': 'Doctor Message',
     },
     'join_response': {
-      'icon': Icons.check_circle_outline,
-      'accentColor': const Color(0xFF4CAF50),
+      'icon': Icons.notifications_outlined,
+      'accentColor': const Color(0xFF7E57C2),
       'label': 'Request Response',
     },
     'bad_posture_streak': {
@@ -541,8 +541,8 @@ class _PatientNotificationsScreenState
                         const SizedBox(width: 8),
                         Text(
                           decision == 'accepted'
-                              ? '✅ Request Accepted'
-                              : '❌ Request Declined',
+                              ? ' Request Accepted'
+                              : ' Request Declined',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
