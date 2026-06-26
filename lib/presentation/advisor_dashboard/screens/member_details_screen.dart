@@ -267,16 +267,23 @@ class _MemberDetailsScreenState extends ConsumerState<MemberDetailsScreen>
                                         ),
                                       ],
                                     ),
-                                    child: Center(
-                                      child: Text(
-                                        initials,
-                                        style: const TextStyle(
-                                          fontSize: 24,
-                                          fontWeight: FontWeight.w800,
-                                          color: AppColors.primaryDeep,
-                                        ),
-                                      ),
-                                    ),
+                                    clipBehavior: Clip.antiAlias,
+                                    child: (_patientData?['profileImageBase64'] != null &&
+                                            (_patientData!['profileImageBase64'] as String).isNotEmpty)
+                                        ? Image.memory(
+                                            base64Decode(_patientData!['profileImageBase64']),
+                                            fit: BoxFit.cover,
+                                          )
+                                        : Center(
+                                            child: Text(
+                                              initials,
+                                              style: const TextStyle(
+                                                fontSize: 24,
+                                                fontWeight: FontWeight.w800,
+                                                color: AppColors.primaryDeep,
+                                              ),
+                                            ),
+                                          ),
                                   ),
                                   const SizedBox(width: 16),
                                   Expanded(

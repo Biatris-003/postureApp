@@ -102,6 +102,7 @@ class AssignedMembersTabState extends ConsumerState<AssignedMembersTab> {
     }
   }
 
+  // ✅ UPDATED: Load pending requests with patient profile data
   Future<void> _loadPendingRequests() async {
     if (_clinicianLogicalId == null) {
       print('⚠️ _clinicianLogicalId is null');
@@ -111,7 +112,6 @@ class AssignedMembersTabState extends ConsumerState<AssignedMembersTab> {
     try {
       print('🔍 Loading pending requests for: $_clinicianLogicalId');
 
-      // ✅ Load from notifications collection - WITHOUT isRead filter
       final snapshot = await FirebaseFirestore.instance
           .collection('notifications')
           .where('recipientId', isEqualTo: _clinicianLogicalId)
@@ -122,30 +122,62 @@ class AssignedMembersTabState extends ConsumerState<AssignedMembersTab> {
 
       print('🔍 Found ${snapshot.docs.length} pending requests');
 
-      setState(() {
-        _pendingRequests = snapshot.docs.map((d) {
-          final data = d.data();
-          data['id'] = d.id;
+      List<Map<String, dynamic>> requests = [];
+
+      for (final doc in snapshot.docs) {
+        final data = Map<String, dynamic>.from(doc.data());
+        
+        // Get patient ID from the notification
+        final patientId = data['senderId'] as String?;
+        
+        if (patientId != null) {
+          // ✅ Fetch patient document to get profile data
+          try {
+            final patientQuery = await FirebaseFirestore.instance
+                .collection('patients')
+                .where('patientId', isEqualTo: patientId)
+                .limit(1)
+                .get();
+
+            if (patientQuery.docs.isNotEmpty) {
+              final patientData = patientQuery.docs.first.data();
+              
+              // ✅ Merge patient data with notification data
+              data['fullName'] = patientData['fullName'] ?? 'Unknown';
+              data['contactEmail'] = patientData['contactEmail'] ?? '';
+              data['dateOfBirth'] = patientData['dateOfBirth'] ?? '';
+              data['gender'] = patientData['gender'] ?? '';
+              data['profileImageBase64'] = patientData['profileImageBase64'];
+              data['patientId'] = patientId;
+            } else {
+              // Fallback to notification data if patient not found
+              data['fullName'] = data['patientName'] ?? 'Unknown';
+              data['profileImageBase64'] = null;
+            }
+          } catch (e) {
+            print('⚠️ Error fetching patient data for $patientId: $e');
+            data['fullName'] = data['patientName'] ?? 'Unknown';
+            data['profileImageBase64'] = null;
+          }
+        } else {
           data['fullName'] = data['patientName'] ?? 'Unknown';
-          return data;
-        }).toList();
+          data['profileImageBase64'] = null;
+        }
+
+        data['id'] = doc.id;
+        requests.add(data);
+      }
+
+      setState(() {
+        _pendingRequests = requests;
+        _isLoading = false;
       });
     } catch (e) {
       print('❌ Error loading pending requests: $e');
+      setState(() => _isLoading = false);
     }
   }
 
-// Future<void> _loadPendingRequests() async {
-//   final snapshot = await FirebaseFirestore.instance
-//       .collection('notifications')
-//       .get();
-
-//   print('TOTAL NOTIFICATIONS = ${snapshot.docs.length}');
-
-//   for (final doc in snapshot.docs) {
-//     print(doc.data());
-//   }
-// }
   Future<void> _loadUnreadCount() async {
     if (_clinicianLogicalId == null) return;
 
@@ -163,7 +195,7 @@ class AssignedMembersTabState extends ConsumerState<AssignedMembersTab> {
 
   Future<void> _acceptPendingRequest(Map<String, dynamic> request) async {
     final patientId = request['senderId'] as String? ?? '';
-    final patientName = request['patientName'] ?? 'Patient';
+    final patientName = request['fullName'] ?? request['patientName'] ?? 'Patient';
     final requestId = request['id'] as String?;
 
     print('✅ ACCEPT: patientId=$patientId, requestId=$requestId');
@@ -239,7 +271,7 @@ class AssignedMembersTabState extends ConsumerState<AssignedMembersTab> {
 
   Future<void> _declinePendingRequest(Map<String, dynamic> request) async {
     final patientId = request['senderId'] as String? ?? '';
-    final patientName = request['patientName'] ?? 'Patient';
+    final patientName = request['fullName'] ?? request['patientName'] ?? 'Patient';
     final requestId = request['id'] as String?;
 
     print('❌ DECLINE: patientId=$patientId, requestId=$requestId');
@@ -599,6 +631,7 @@ class AssignedMembersTabState extends ConsumerState<AssignedMembersTab> {
     );
   }
 
+  // ✅ UPDATED: _buildPatientRow with profile image support
   Widget _buildPatientRow(Map<String, dynamic> patient) {
     final name = patient['fullName'] ?? patient['patientName'] ?? 'Unknown';
     final email = patient['contactEmail'] ?? '';
@@ -606,6 +639,9 @@ class AssignedMembersTabState extends ConsumerState<AssignedMembersTab> {
     final gender = patient['gender'] ?? '';
     final age = _ageFromDob(dob);
     final isPending = _activeFilter == 'pending';
+    
+    // ✅ Get profile image if available
+    final imageBase64 = patient['profileImageBase64'];
 
     final parts = name.split(' ').where((String e) => e.isNotEmpty).take(2).toList();
     final initials = parts.map((String e) => e[0]).join();
@@ -643,6 +679,7 @@ class AssignedMembersTabState extends ConsumerState<AssignedMembersTab> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(
           children: [
+            // ✅ Updated avatar with profile image support
             Container(
               width: 52,
               height: 52,
@@ -650,16 +687,35 @@ class AssignedMembersTabState extends ConsumerState<AssignedMembersTab> {
                 color: avatarColor.withValues(alpha: 0.12),
                 shape: BoxShape.circle,
               ),
-              child: Center(
-                child: Text(
-                  initials,
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: avatarColor,
-                  ),
-                ),
-              ),
+              clipBehavior: Clip.antiAlias,
+              child: imageBase64 != null && imageBase64.toString().isNotEmpty
+                  ? Image.memory(
+                      base64Decode(imageBase64),
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        // Fallback to initials if image fails to load
+                        return Center(
+                          child: Text(
+                            initials,
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              color: avatarColor,
+                            ),
+                          ),
+                        );
+                      },
+                    )
+                  : Center(
+                      child: Text(
+                        initials,
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: avatarColor,
+                        ),
+                      ),
+                    ),
             ),
             const SizedBox(width: 14),
             Expanded(

@@ -16,6 +16,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   bool _isLogin = true;
   bool _isLoading = false;
   String? _errorMessage;
+  
+  // ✅ Role selection
+  String _selectedRole = 'Member'; // 'Member' for Patient, 'Advisor' for Doctor
 
   // Login controllers
   final _loginFormKey = GlobalKey<FormState>();
@@ -101,10 +104,11 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     });
 
     try {
+      // ✅ Use the selected role instead of hardcoded 'Member'
       final user = await ref.read(authServiceProvider).signUp(
             email: _signupEmailController.text.trim(),
             password: _signupPasswordController.text,
-            role: 'Member',
+            role: _selectedRole, // ✅ Uses selected role
             profileData: {
               'fullName': _signupUsernameController.text.trim(),
               'contactEmail': _signupEmailController.text.trim(),
@@ -467,6 +471,56 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           ),
           const SizedBox(height: 24),
 
+          // ✅ ROLE SELECTION - Professional segmented control style
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Register as',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade200,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _roleButton(
+                        title: 'Patient',
+                        selected: _selectedRole == 'Member',
+                        onTap: () {
+                          setState(() {
+                            _selectedRole = 'Member';
+                          });
+                        },
+                      ),
+                    ),
+                    Expanded(
+                      child: _roleButton(
+                        title: 'Doctor',
+                        selected: _selectedRole == 'Advisor',
+                        onTap: () {
+                          setState(() {
+                            _selectedRole = 'Advisor';
+                          });
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 24),
+
           // ── Signup Button ──
           if (_isLoading)
             const Center(
@@ -498,6 +552,46 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  // ✅ Role button widget - matches the tab style
+  Widget _roleButton({
+    required String title,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 250),
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: selected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 6,
+                    offset: const Offset(0, 1),
+                  ),
+                ]
+              : [],
+        ),
+        child: Center(
+          child: Text(
+            title,
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+              color: selected
+                  ? _primaryBlue
+                  : Colors.grey.shade700,
+            ),
+          ),
+        ),
       ),
     );
   }
